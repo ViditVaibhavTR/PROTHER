@@ -1,0 +1,7 @@
+{
+  "simplePrompt": "create a React component for user login",
+  "enhanceDirective": "enhance: make this function faster",
+  "multiSentence": "fix the bug in sort function. also add unit tests for it",
+  "empty": "",
+  "whitespaceOnly": "   "
+}

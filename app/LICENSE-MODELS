@@ -1,0 +1,10 @@
+Model Attribution for Prother
+==============================
+
+Vosk Speech Recognition Model
+  Model: vosk-model-small-en-us-0.15
+  License: Apache License 2.0
+  Copyright: Alpha Cephei Inc.
+  Source: https://alphacephei.com/vosk/models
+  Note: This model is lazy-downloaded on first wake word enable.
+        It is NOT bundled in the extension package.

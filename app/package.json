@@ -1,0 +1,143 @@
+{
+  "name": "prother",
+  "displayName": "Prother - Voice Prompts for AI Coding",
+  "description": "Speak your coding prompts instead of typing them. Works with Copilot, Cline, Claude Code, and more.",
+  "version": "0.1.0",
+  "publisher": "ViditVaibhav",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "privacy": "https://github.com/ViditVaibhavTR/PROTHER/blob/main/app/PRIVACY.md",
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "voice",
+    "speech",
+    "ai",
+    "copilot",
+    "cline",
+    "claude",
+    "prompt"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ViditVaibhavTR/PROTHER.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ViditVaibhavTR/PROTHER/issues"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionPack": [
+    "ms-vscode.vscode-speech"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "prother.activate",
+        "title": "Prother: Start Listening"
+      },
+      {
+        "command": "prother.enhance",
+        "title": "Prother: Speak & Enhance Prompt"
+      },
+      {
+        "command": "prother.setup",
+        "title": "Prother: Set Up API Key"
+      },
+      {
+        "command": "prother.settings",
+        "title": "Prother: Open Settings"
+      },
+      {
+        "command": "prother.recentPrompts",
+        "title": "Prother: Show Recent Prompts"
+      },
+      {
+        "command": "prother.reportIssue",
+        "title": "Prother: Report Issue"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "prother.activate",
+        "key": "alt+v",
+        "mac": "alt+v"
+      }
+    ],
+    "configuration": {
+      "title": "Prother",
+      "properties": {
+        "prother.speech.silenceTimeout": {
+          "type": "number",
+          "default": 1500,
+          "description": "Silence duration (ms) before ending speech capture"
+        },
+        "prother.enhancement.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable AI prompt enhancement"
+        },
+        "prother.llm.defaultProvider": {
+          "type": "string",
+          "enum": [
+            "gemini",
+            "anthropic",
+            "openai",
+            "groq"
+          ],
+          "default": "gemini",
+          "description": "Default LLM provider for enhancement"
+        },
+        "prother.llm.geminiModel": {
+          "type": "string",
+          "default": "gemini-1.5-flash",
+          "description": "Gemini model to use for enhancement. Change if the default model is deprecated."
+        },
+        "prother.inject.defaultTarget": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "copilot",
+            "cline",
+            "continue",
+            "claude-code"
+          ],
+          "default": "auto",
+          "description": "Default AI extension target for injection"
+        },
+        "prother.wakeWord.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable 'Hey Prother' wake word detection (downloads ~50MB Vosk model on first enable)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "@types/vscode": "^1.109.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "esbuild": "^0.27.3",
+    "eslint": "^10.0.3",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
