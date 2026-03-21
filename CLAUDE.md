@@ -26,7 +26,7 @@ VS Code extension: voice-to-text for AI coding. User speaks prompts, they get in
 5. **Soft dependency on Speech extension** — use `extensionPack` not `extensionDependencies`; runtime check with "Install Now" notification
 6. **Remote/Web detection** — check `vscode.env.remoteName` and `typeof vscode.speech` on activation; disable audio gracefully
 7. **Global unhandledRejection handler** — in extension.ts; no raw stack traces to users ever
-8. **Native addon graceful fallback** — if Vosk/naudiodon fail to load, show platform-specific error, continue with Alt+V only
+8. **Native addon graceful fallback** — if Vosk/naudiodon fail to load, show platform-specific error, continue with Ctrl+Shift+V only
 9. **All keys in SecretStorage only** — never in settings.json, never logged, never telemetrized
 
 ## Tech Stack
@@ -42,7 +42,7 @@ VS Code extension: voice-to-text for AI coding. User speaks prompts, they get in
 | Key storage | VS Code SecretStorage | VS Code API |
 
 ## Build Phases
-- **Phase 1** (Weeks 1-2): Walking skeleton — Alt+V → speak → text in Copilot
+- **Phase 1** (Weeks 1-2): Walking skeleton — Ctrl+Shift+V → speak → text in Copilot
 - **Phase 2** (Weeks 3-4): Onboarding + enhancement — BYOK setup, Gemini API, prompt enhancement
 - **Phase 3** (Weeks 5-6): Multi-provider + multi-target — 4 LLM providers, 4 injection targets
 - **Phase 4** (Weeks 7-8): Wake word + polish — Vosk, naudiodon, marketplace publish
@@ -65,7 +65,7 @@ src/
 ```
 
 ## Default Hotkey
-`Alt+V` (not Ctrl+Shift+V — that conflicts with Markdown Preview Toggle)
+`Ctrl+Shift+V`
 
 ## Commands
 `prother.activate`, `prother.enhance`, `prother.setup`, `prother.settings`, `prother.recentPrompts`, `prother.reportIssue`

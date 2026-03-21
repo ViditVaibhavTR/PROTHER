@@ -21,7 +21,7 @@ describe('Error classes', () => {
 
   it('SpeechError has default user message', () => {
     const err = new SpeechError('mic failed');
-    expect(err.userMessage).toBe('Voice input failed. Try pressing Alt+V again.');
+    expect(err.userMessage).toBe('Voice input failed. Try pressing Ctrl+Alt+V again.');
     expect(err.code).toBe('SPEECH_ERROR');
   });
 

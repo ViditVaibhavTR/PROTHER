@@ -4,7 +4,8 @@ import { StatusBar } from './ui/status-bar';
 import { SpeechModule } from './speech/speech-module';
 import { InjectModule } from './inject/inject-module';
 import { CommandRouter } from './core/command-router';
-import { showSpeechExtensionMissing, showRemoteWarning, showWebWarning } from './ui/notifications';
+import { KeyManager } from './keys/key-manager';
+import { showRemoteWarning } from './ui/notifications';
 import { ISSUES_URL } from './core/constants';
 
 let rejectionHandlerRegistered = false;
@@ -29,20 +30,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // --- Environment checks ---
 
   const isRemote = !!vscode.env.remoteName;
-  const hasSpeechApi = typeof (vscode as Record<string, unknown>).speech !== 'undefined';
 
   if (isRemote) {
     showRemoteWarning();
     outputChannel.appendLine(`[WARN] Remote environment detected: ${vscode.env.remoteName}`);
-  }
-
-  if (!hasSpeechApi) {
-    showWebWarning();
-    outputChannel.appendLine('[WARN] vscode.speech API not available');
-  }
-
-  if (!vscode.extensions.getExtension('ms-vscode.vscode-speech')) {
-    showSpeechExtensionMissing();
   }
 
   // --- Core components ---
@@ -50,8 +41,21 @@ export function activate(context: vscode.ExtensionContext): void {
   const statusBar = new StatusBar();
   context.subscriptions.push(statusBar);
 
+  const keyManager = new KeyManager(context.secrets);
+  context.subscriptions.push(keyManager);
+
   const speechModule = new SpeechModule();
   context.subscriptions.push(speechModule);
+
+  if (!speechModule.isAvailable()) {
+    outputChannel.appendLine('[WARN] Voice input not available in this environment');
+  } else {
+    // Pre-warm PowerShell in background (compiles C# interop ~2-3s)
+    // After this, Ctrl+Shift+V starts recording instantly
+    void speechModule.warmUp().then(() => {
+      outputChannel.appendLine('[INFO] Audio recorder warmed up and ready');
+    });
+  }
 
   const injectModule = new InjectModule();
   context.subscriptions.push(injectModule);
@@ -59,11 +63,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const commandRouter = new CommandRouter(speechModule, injectModule, statusBar, outputChannel);
   context.subscriptions.push(commandRouter);
 
-  // Set initial state based on environment
+  // Set initial state
   if (isRemote) {
     statusBar.setState(ProthState.REMOTE);
-  } else if (!hasSpeechApi) {
-    statusBar.setState(ProthState.DISABLED);
   } else {
     statusBar.setState(ProthState.IDLE);
   }
@@ -83,8 +85,8 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('prother.setup', () => {
-      vscode.window.showInformationMessage('Prother: API Key setup coming in Phase 2');
+    vscode.commands.registerCommand('prother.setup', async () => {
+      await keyManager.getOrPrompt('openai', 'OpenAI');
     }),
   );
 

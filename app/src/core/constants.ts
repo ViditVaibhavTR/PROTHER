@@ -35,6 +35,12 @@ export const AI_EXTENSION_DEFS: AIExtensionDef[] = [
     detectionMethod: 'extension-api',
   },
   {
+    id: 'anthropic.claude-code',
+    displayName: 'Claude Code',
+    type: 'webview',
+    detectionMethod: 'extension-api',
+  },
+  {
     id: 'saoudrizwan.claude-dev',
     displayName: 'Cline',
     type: 'webview',
@@ -54,11 +60,15 @@ export const AI_EXTENSION_DEFS: AIExtensionDef[] = [
   },
 ];
 
-/** Extension command for Copilot injection */
+/** Extension commands for injection into AI assistants */
 export const EXTENSION_COMMANDS: Record<string, { openCommand: string; useBuiltInChat: boolean }> = {
   'github.copilot-chat': {
     openCommand: 'workbench.action.chat.open',
     useBuiltInChat: true,
+  },
+  'anthropic.claude-code': {
+    openCommand: 'claude-vscode.focus',
+    useBuiltInChat: false,
   },
   'saoudrizwan.claude-dev': {
     openCommand: 'cline.plusButtonClicked',
@@ -72,7 +82,7 @@ export const EXTENSION_COMMANDS: Record<string, { openCommand: string; useBuiltI
 
 /** Terminal name patterns for CLI AI tools */
 export const CLI_TERMINAL_PATTERNS: Record<string, RegExp> = {
-  'claude-code-terminal': /claude/i,
+  'claude-code-terminal': /claude|anthropic/i,
   aider: /aider/i,
   'gpt-engineer': /gpt-engineer/i,
 };

@@ -33,9 +33,6 @@
   "activationEvents": [
     "onStartupFinished"
   ],
-  "extensionPack": [
-    "ms-vscode.vscode-speech"
-  ],
   "contributes": {
     "commands": [
       {
@@ -66,8 +63,8 @@
     "keybindings": [
       {
         "command": "prother.activate",
-        "key": "alt+v",
-        "mac": "alt+v"
+        "key": "ctrl+shift+v",
+        "mac": "ctrl+shift+v"
       }
     ],
     "configuration": {
@@ -131,13 +128,17 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.37",
-    "@types/vscode": "^1.109.0",
+    "@types/vscode": "^1.93.0",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
+    "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.3",
     "eslint": "^10.0.3",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
-  }
+  },
+  "extensionPack": [
+    "ms-vscode.vscode-speech"
+  ]
 }

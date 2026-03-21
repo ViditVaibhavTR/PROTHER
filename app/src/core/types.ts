@@ -59,6 +59,9 @@ export interface CommandConfig {
   useBuiltInChat: boolean;
 }
 
+/** Speech module status */
+export type SpeechStatus = 'idle' | 'listening' | 'processing' | 'error' | 'unavailable';
+
 /** Speech transcript event payload */
 export interface TranscriptEvent {
   text: string;
@@ -103,31 +106,3 @@ export interface TestResult {
   provider: string;
 }
 
-// --- VS Code Speech API types (not in @types/vscode yet) ---
-
-/** Speech recognition event types from ms-vscode.vscode-speech */
-export const SpeechEventType = {
-  /** Partial recognition result (still listening) */
-  Recognizing: 1,
-  /** Final recognition result (utterance segment complete) */
-  Recognized: 2,
-} as const;
-
-/** A speech recognition result event */
-export interface SpeechRecognitionEvent {
-  text: string;
-  type: (typeof SpeechEventType)[keyof typeof SpeechEventType];
-}
-
-/** The speech-to-text session returned by vscode.speech API */
-export interface SpeechToTextSession {
-  onDidChange: import('vscode').Event<SpeechRecognitionEvent>;
-}
-
-/** The vscode.speech namespace (available when ms-vscode.vscode-speech is installed) */
-export interface VsCodeSpeechApi {
-  createSpeechToTextSession: (
-    token: import('vscode').CancellationToken,
-    options?: { language?: string },
-  ) => SpeechToTextSession;
-}

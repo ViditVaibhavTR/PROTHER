@@ -1,23 +1,26 @@
 import * as vscode from 'vscode';
 import { TypedEvent } from '../core/events';
 import { SpeechError } from '../core/errors';
-import { SPEECH_EXTENSION_ID } from '../core/constants';
 import { TranscriptBuilder } from './transcript-builder';
-import { SilenceDetector } from './silence-detector';
-import { SpeechEventType } from '../core/types';
-import type { TranscriptEvent, VsCodeSpeechApi } from '../core/types';
+import { AudioRecorder } from './audio-recorder';
+import { transcribeAudio } from './whisper-client';
+import type { TranscriptEvent, SpeechStatus } from '../core/types';
 
-type SpeechStatus = 'listening' | 'processing' | 'idle';
+export type { SpeechStatus };
 
 /**
- * Wraps VS Code Speech API for voice-to-text.
- * Manages microphone session lifecycle, accumulates transcripts,
- * and detects end-of-utterance via silence timeout.
+ * Captures voice input using PowerShell-based native audio recording,
+ * then transcribes via local faster-whisper.
+ *
+ * Zero visible UI — status bar provides all feedback.
+ * Zero API keys — runs entirely on-device.
+ * Toggle: Ctrl+Shift+V starts, Ctrl+Shift+V again stops and transcribes.
+ * Pre-warmed: PowerShell process starts on activation, so recording is instant.
  */
 export class SpeechModule implements vscode.Disposable {
-  private session: vscode.Disposable | null = null;
+  private isListening = false;
   private readonly transcriptBuilder = new TranscriptBuilder();
-  private readonly silenceDetector: SilenceDetector;
+  private readonly audioRecorder: AudioRecorder;
   private readonly disposables: vscode.Disposable[] = [];
 
   private readonly _onTranscript = new TypedEvent<TranscriptEvent>();
@@ -30,97 +33,121 @@ export class SpeechModule implements vscode.Disposable {
   readonly onStatusChange = this._onStatusChange.event;
 
   constructor() {
-    this.silenceDetector = new SilenceDetector();
-    this.disposables.push(this.silenceDetector);
+    this.audioRecorder = new AudioRecorder();
+    this.disposables.push(this.audioRecorder);
 
-    // When silence is detected, finalize and emit the complete transcript
+    // Handle recorder errors
     this.disposables.push(
-      this.silenceDetector.onSilenceDetected(() => {
-        this.transcriptBuilder.finalize();
-        const text = this.transcriptBuilder.getFullTranscript();
-        if (text) {
-          this._onTranscript.fire({ text, isFinal: true });
-        }
+      this.audioRecorder.onError((err) => {
+        this._onError.fire(err);
         this.stopListening();
       }),
     );
   }
 
-  /** Check if the speech environment is available */
-  isAvailable(): boolean {
-    if (vscode.env.remoteName) return false;
-    if (!this.getSpeechApi()) return false;
-    if (!vscode.extensions.getExtension(SPEECH_EXTENSION_ID)) return false;
-    return true;
+  /** Pre-warm the audio recorder (call on extension activation) */
+  async warmUp(): Promise<void> {
+    if (this.isAvailable()) {
+      await this.audioRecorder.warmUp();
+    }
   }
 
-  /** Start a speech-to-text session */
+  /** Check if speech capture is available */
+  isAvailable(): boolean {
+    return this.audioRecorder.isAvailable();
+  }
+
+  /** Get reason why speech is unavailable */
+  getUnavailableReason(): string {
+    return this.audioRecorder.getUnavailableReason();
+  }
+
+  /** Start voice capture */
   async startListening(): Promise<void> {
-    if (this.session) {
+    if (this.isListening) {
       this.stopListening();
     }
 
-    const speechApi = this.getSpeechApi();
-    if (!speechApi) {
+    if (!this.isAvailable()) {
       this._onError.fire(
-        new SpeechError('Speech not available', 'Voice input is not available in this environment.'),
+        new SpeechError('Speech not available', this.getUnavailableReason()),
       );
+      this._onStatusChange.fire('unavailable');
       return;
     }
 
     try {
       this.transcriptBuilder.reset();
+      // Await start() — resolves when PowerShell confirms "RECORDING"
+      await this.audioRecorder.start();
+      this.isListening = true;
       this._onStatusChange.fire('listening');
-
-      const tokenSource = new vscode.CancellationTokenSource();
-      const speechSession = speechApi.createSpeechToTextSession(tokenSource.token);
-
-      const resultDisposable = speechSession.onDidChange((e) => {
-        if (e.type === SpeechEventType.Recognizing) {
-          this.transcriptBuilder.addPartial(e.text);
-          this.silenceDetector.onSpeechActivity();
-          this._onTranscript.fire({
-            text: this.transcriptBuilder.getFullTranscript(),
-            isFinal: false,
-          });
-        } else if (e.type === SpeechEventType.Recognized) {
-          this.transcriptBuilder.addPartial(e.text);
-          this.transcriptBuilder.finalize();
-          this.silenceDetector.onSpeechActivity();
-          this._onTranscript.fire({
-            text: this.transcriptBuilder.getFullTranscript(),
-            isFinal: false,
-          });
-        }
-      });
-
-      this.session = {
-        dispose: () => {
-          resultDisposable.dispose();
-          tokenSource.cancel();
-          tokenSource.dispose();
-        },
-      };
-
-      this.silenceDetector.start();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this._onError.fire(new SpeechError(`Speech session failed: ${message}`));
+      const speechErr =
+        err instanceof SpeechError
+          ? err
+          : new SpeechError(
+              err instanceof Error ? err.message : String(err),
+              'Failed to start voice input. Check that your microphone is available.',
+            );
+      this._onError.fire(speechErr);
+      this.isListening = false;
       this._onStatusChange.fire('idle');
     }
   }
 
-  /** Stop listening and clean up */
+  /** Stop listening without transcribing */
   stopListening(): void {
-    this.silenceDetector.stop();
-    if (this.session) {
-      this.session.dispose();
-      this.session = null;
-    }
+    this.isListening = false;
+    void this.audioRecorder.stop();
     this._onStatusChange.fire('idle');
   }
 
-  /** Force-finalize and return whatever transcript we have so far */
+  /** Stop recording, transcribe locally via faster-whisper, emit transcript */
+  async stopAndTranscribe(): Promise<void> {
+    if (!this.isListening) return;
+    this.isListening = false;
+
+    this._onStatusChange.fire('processing');
+
+    try {
+      const wavBuffer = await this.audioRecorder.stop();
+
+      if (!wavBuffer) {
+        this._onError.fire(
+          new SpeechError('No audio captured', 'No speech detected. Try speaking louder or closer to the mic.'),
+        );
+        this._onStatusChange.fire('idle');
+        return;
+      }
+
+      const text = await transcribeAudio(wavBuffer);
+
+      if (text) {
+        this.transcriptBuilder.reset();
+        this.transcriptBuilder.addPartial(text);
+        this.transcriptBuilder.finalize();
+        this._onTranscript.fire({ text, isFinal: true });
+      } else {
+        this._onError.fire(
+          new SpeechError('Whisper returned empty', 'No speech detected. Try speaking louder or closer to the mic.'),
+        );
+      }
+    } catch (err) {
+      this._onError.fire(
+        err instanceof SpeechError
+          ? err
+          : new SpeechError(
+              err instanceof Error ? err.message : String(err),
+              'Transcription failed. Check that Python and faster-whisper are installed.',
+            ),
+      );
+    } finally {
+      this._onStatusChange.fire('idle');
+    }
+  }
+
+  /** Force-finalize and return whatever transcript we have */
   finalizeAndGet(): string {
     this.transcriptBuilder.finalize();
     return this.transcriptBuilder.getFullTranscript();
@@ -129,13 +156,6 @@ export class SpeechModule implements vscode.Disposable {
   /** Whether there's any captured text */
   hasTranscript(): boolean {
     return !this.transcriptBuilder.isEmpty();
-  }
-
-  /** Get the speech API if available, or null */
-  private getSpeechApi(): VsCodeSpeechApi | null {
-    const speech = (vscode as Record<string, unknown>).speech;
-    if (typeof speech === 'undefined') return null;
-    return speech as VsCodeSpeechApi;
   }
 
   dispose(): void {

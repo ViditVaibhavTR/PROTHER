@@ -53,6 +53,8 @@ export class CommandRouter implements vscode.Disposable {
       this.speechModule.onStatusChange((status) => {
         if (status === 'listening') {
           this.statusBar.setState(ProthState.LISTENING);
+        } else if (status === 'unavailable') {
+          this.statusBar.setState(ProthState.DISABLED);
         }
       }),
     );
@@ -62,18 +64,12 @@ export class CommandRouter implements vscode.Disposable {
   async activate(trigger: Trigger): Promise<void> {
     this.outputChannel.appendLine(`[INFO] Activate triggered via: ${trigger}`);
 
-    // Toggle: if already listening, stop and inject what we have
+    // Toggle: if already listening, stop recording → transcribe → inject
     if (this.state === ProthState.LISTENING) {
-      this.outputChannel.appendLine('[INFO] Toggle: stopping and injecting current transcript');
-      const text = this.speechModule.finalizeAndGet();
-      this.speechModule.stopListening();
-
-      if (text) {
-        await this.processAndInject(text);
-      } else {
-        showInfo('No speech detected. Try again.');
-        this.transitionTo(ProthState.IDLE);
-      }
+      this.outputChannel.appendLine('[INFO] Toggle: stopping recording and transcribing');
+      this.transitionTo(ProthState.PROCESSING);
+      await this.speechModule.stopAndTranscribe();
+      // Transcript and errors are handled via onTranscript/onError events
       return;
     }
 
