@@ -1,5 +1,3 @@
-import * as vscode from 'vscode';
-
 /** Extension state machine states */
 export enum ProthState {
   SETUP = 'setup',
@@ -53,12 +51,6 @@ export interface InjectionStrategy {
   inject(text: string, target: string): Promise<boolean>;
 }
 
-/** Command config for extension-specific injection */
-export interface CommandConfig {
-  openCommand: string;
-  useBuiltInChat: boolean;
-}
-
 /** Speech module status */
 export type SpeechStatus = 'idle' | 'listening' | 'processing' | 'error' | 'unavailable';
 
@@ -67,42 +59,3 @@ export interface TranscriptEvent {
   text: string;
   isFinal: boolean;
 }
-
-/** Disposable interface for cleanup */
-export interface Disposable {
-  dispose(): void;
-}
-
-/** Editor context for prompt enhancement (Phase 2) */
-export interface EditorContext {
-  activeFile: string;
-  selectedCode: string | null;
-  language: string;
-  cursorPosition: vscode.Position;
-  workspaceLanguages: string[];
-  recentFiles: string[];
-}
-
-/** LLM request format (Phase 2) */
-export interface LLMRequest {
-  systemPrompt: string;
-  userMessage: string;
-  maxTokens?: number;
-  temperature?: number;
-  provider?: string;
-}
-
-/** LLM response format (Phase 2) */
-export interface LLMResponse {
-  text: string;
-  tokensUsed?: number;
-  provider: string;
-}
-
-/** API key test result */
-export interface TestResult {
-  valid: boolean;
-  error?: 'invalid_key' | 'rate_limited' | 'network_error';
-  provider: string;
-}
-

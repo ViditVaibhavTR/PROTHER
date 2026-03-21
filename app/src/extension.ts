@@ -96,8 +96,8 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('prother.setup', async () => {
-      await keyManager.getOrPrompt('openai', 'OpenAI');
+    vscode.commands.registerCommand('prother.setup', () => {
+      vscode.window.showInformationMessage('Prother: API key setup coming in Phase 2');
     }),
   );
 
