@@ -78,13 +78,21 @@ export class AudioRecorder implements vscode.Disposable {
     this.spawnProcess();
 
     // Wait for "READY" signal (C# compiled, process warm)
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       this.readyResolver = resolve;
-      // Timeout: if PowerShell doesn't respond in 10s, resolve anyway
+      // Timeout: if PowerShell doesn't respond in 10s, check if process is alive
       setTimeout(() => {
         if (this.readyResolver) {
           this.readyResolver = null;
-          resolve();
+          if (this.proc && !this.proc.killed) {
+            // Process alive but slow — resolve and hope for the best
+            resolve();
+          } else {
+            reject(new SpeechError(
+              'PowerShell warm-up timed out',
+              'Audio recorder failed to start. Try reloading VS Code.',
+            ));
+          }
         }
       }, 10_000);
     });
@@ -137,7 +145,7 @@ export class AudioRecorder implements vscode.Disposable {
 
       try {
         const wavPathForPs = this.tempWav.replace(/\\/g, '\\\\');
-        this.proc!.stdin?.write('record ' + wavPathForPs + '\n');
+        this.proc?.stdin?.write('record ' + wavPathForPs + '\n');
       } catch (err) {
         this.recordingResolver = null;
         reject(new SpeechError(
@@ -176,7 +184,7 @@ export class AudioRecorder implements vscode.Disposable {
       this.savedResolver = resolve;
 
       try {
-        this.proc!.stdin?.write('stop\n');
+        this.proc?.stdin?.write('stop\n');
       } catch {
         this.savedResolver = null;
         resolve();
@@ -193,20 +201,20 @@ export class AudioRecorder implements vscode.Disposable {
 
     this._onStopped.fire();
 
-    // Read the WAV file
+    // Read the WAV file then clean up
     try {
       if (fs.existsSync(this.tempWav)) {
         const wav = fs.readFileSync(this.tempWav);
-        this.cleanupWav();
         // WAV header is 44 bytes — if just the header, no audio
         if (wav.length <= 44) return null;
         return wav;
       }
     } catch {
       // File read failed
+    } finally {
+      this.cleanupWav();
     }
 
-    this.cleanupWav();
     return null;
   }
 

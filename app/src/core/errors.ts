@@ -12,7 +12,7 @@ export class ProthError extends Error {
 
 export class SpeechError extends ProthError {
   constructor(message: string, userMessage?: string) {
-    super(message, userMessage ?? 'Voice input failed. Try pressing Ctrl+Alt+V again.', 'SPEECH_ERROR');
+    super(message, userMessage ?? 'Voice input failed. Try pressing Ctrl+Shift+V again.', 'SPEECH_ERROR');
     this.name = 'SpeechError';
   }
 }

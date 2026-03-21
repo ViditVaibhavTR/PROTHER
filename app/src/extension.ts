@@ -55,8 +55,11 @@ export function activate(context: vscode.ExtensionContext): void {
     outputChannel.appendLine('[WARN] Voice input not available in this environment');
   } else {
     // Pre-warm PowerShell in background (compiles C# interop ~2-3s)
-    void speechModule.warmUp().then(() => {
+    speechModule.warmUp().then(() => {
       outputChannel.appendLine('[INFO] Audio recorder warmed up and ready');
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      outputChannel.appendLine(`[WARN] Audio warm-up failed: ${msg}`);
     });
   }
 
