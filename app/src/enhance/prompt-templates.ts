@@ -1,43 +1,114 @@
-import type { EditorContext } from '../core/types';
+import type { EditorContext, Intent } from '../core/types';
 
-/**
- * System prompt for the enhancement LLM call.
- */
-export function getEnhancementSystemPrompt(): string {
-  return `You are a coding prompt optimizer. Your job is to take a rough, spoken coding prompt and improve it into a clear, specific, actionable instruction for an AI coding assistant.
+const SYSTEM_PROMPTS: Record<Intent, string> = {
+  debug: `You are a debugging assistant. The user is trying to fix an error or bug. Clean up their spoken request and integrate the error details and file context provided below. Output a clear, actionable debugging prompt that includes the specific error message and location. Do not add requirements the user didn't mention. Output ONLY the enhanced prompt.`,
 
-Rules:
-- Keep the original intent — don't add features the user didn't ask for
-- Add specificity: mention the language, framework, or file if relevant
-- Structure the prompt clearly (what to do, where, any constraints)
-- Be concise — don't pad with unnecessary context
-- Output ONLY the enhanced prompt, nothing else (no explanations, no markdown)`;
+  explore: `You are a code explanation assistant. The user wants to understand some code. Clean up their spoken request and reference the specific code or function provided below. Keep the prompt focused on understanding, not modifying. Output ONLY the enhanced prompt.`,
+
+  refactor: `You are a refactoring assistant. The user wants to restructure or improve existing code. Clean up their spoken request and reference the specific file and code context below. Preserve their intent about what to change and how. Output ONLY the enhanced prompt.`,
+
+  generate: `You are a project-aware coding assistant. The user wants to create something new. Clean up their spoken request and incorporate the project's tech stack so the downstream AI produces idiomatic code. Do not add features or requirements the user didn't ask for. Output ONLY the enhanced prompt.`,
+
+  review: `You are a code review assistant. The user wants to review recent changes. Clean up their spoken request and reference the git changes provided below. Focus the prompt on what aspects to review. Output ONLY the enhanced prompt.`,
+
+  casual: `You are a prompt clarifier. Clean up the spoken text into a clear instruction. Fix grammar, remove filler words. Do not add technical jargon. Keep the same tone and length. Output ONLY the cleaned text, nothing else.`,
+};
+
+/** Get the system prompt for a specific intent */
+export function getSystemPromptForIntent(intent: Intent): string {
+  return SYSTEM_PROMPTS[intent];
 }
 
 /**
- * Build the user message that combines the raw prompt with editor context.
- * This is sent as a SINGLE message alongside the system prompt — never split.
+ * Build the user message with only the context relevant to the detected intent.
+ * Keeps token usage low by excluding irrelevant fields.
  */
-export function buildEnhancementMessage(rawPrompt: string, context: EditorContext): string {
+export function buildEnhancementMessage(rawPrompt: string, context: EditorContext, intent: Intent): string {
   const parts: string[] = [];
+  parts.push(`User prompt: "${rawPrompt}"`);
 
-  parts.push(`Raw spoken prompt: "${rawPrompt}"`);
+  switch (intent) {
+    case 'debug':
+      appendFileContext(parts, context);
+      appendSelectedOrCursor(parts, context);
+      appendDiagnostics(parts, context);
+      break;
 
-  if (context.activeFile) {
-    parts.push(`Active file: ${context.activeFile}`);
-  }
+    case 'explore':
+      appendFileContext(parts, context);
+      appendSelectedOrCursor(parts, context);
+      break;
 
-  if (context.language && context.language !== 'plaintext') {
-    parts.push(`Language: ${context.language}`);
-  }
+    case 'refactor':
+      appendFileContext(parts, context);
+      appendSelectedOrCursor(parts, context);
+      break;
 
-  if (context.selectedCode) {
-    parts.push(`Selected code:\n\`\`\`\n${context.selectedCode}\n\`\`\``);
-  }
+    case 'generate':
+      appendProjectHints(parts, context);
+      if (context.workspaceLanguages.length > 0) {
+        parts.push(`Workspace languages: ${context.workspaceLanguages.join(', ')}`);
+      }
+      break;
 
-  if (context.workspaceLanguages.length > 0) {
-    parts.push(`Workspace languages: ${context.workspaceLanguages.join(', ')}`);
+    case 'review':
+      appendGitSummary(parts, context);
+      break;
+
+    case 'casual':
+      // No context for casual prompts
+      break;
   }
 
   return parts.join('\n');
+}
+
+// --- Helper functions to append context sections ---
+
+function appendFileContext(parts: string[], ctx: EditorContext): void {
+  if (ctx.activeFile) {
+    // Show just the filename, not the full path
+    const fileName = ctx.activeFile.split(/[\\/]/).pop() ?? ctx.activeFile;
+    parts.push(`File: ${fileName}`);
+  }
+  if (ctx.language && ctx.language !== 'plaintext') {
+    parts.push(`Language: ${ctx.language}`);
+  }
+}
+
+function appendSelectedOrCursor(parts: string[], ctx: EditorContext): void {
+  if (ctx.selectedCode) {
+    const code = ctx.selectedCode.length > 800
+      ? ctx.selectedCode.substring(0, 800) + '\n... (truncated)'
+      : ctx.selectedCode;
+    parts.push(`Selected code:\n\`\`\`\n${code}\n\`\`\``);
+  } else if (ctx.cursorContext) {
+    parts.push(`Code around cursor:\n\`\`\`\n${ctx.cursorContext}\n\`\`\``);
+  }
+}
+
+function appendDiagnostics(parts: string[], ctx: EditorContext): void {
+  if (ctx.diagnostics.length === 0) return;
+
+  const diagLines = ctx.diagnostics.map((d) => {
+    const prefix = d.severity === 'error' ? 'ERROR' : 'WARN';
+    return `${prefix} line ${d.line}: ${d.message}\n  → ${d.sourceLine}`;
+  });
+  parts.push(`Diagnostics:\n${diagLines.join('\n')}`);
+}
+
+function appendGitSummary(parts: string[], ctx: EditorContext): void {
+  if (!ctx.gitSummary) return;
+
+  parts.push(`Branch: ${ctx.gitSummary.branch}`);
+  parts.push(`Changes (${ctx.gitSummary.modifiedFiles} files):\n${ctx.gitSummary.diffSummary}`);
+}
+
+function appendProjectHints(parts: string[], ctx: EditorContext): void {
+  if (!ctx.projectHints) return;
+
+  const hints: string[] = [];
+  if (ctx.projectHints.framework) hints.push(`Framework: ${ctx.projectHints.framework}`);
+  hints.push(`Language: ${ctx.projectHints.primaryLanguage}`);
+  parts.push(hints.join(', '));
 }

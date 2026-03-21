@@ -10,7 +10,6 @@ import { SpeechError } from '../core/errors';
  * Zero API keys needed — runs entirely on-device.
  */
 export async function transcribeAudio(wavBuffer: Buffer): Promise<string> {
-  // Write WAV to temp file
   const tempWav = path.join(os.tmpdir(), 'prother-transcribe-' + Date.now() + '.wav');
   fs.writeFileSync(tempWav, wavBuffer);
 
@@ -18,40 +17,65 @@ export async function transcribeAudio(wavBuffer: Buffer): Promise<string> {
     const text = await runTranscription(tempWav);
     return text.trim();
   } finally {
-    // Cleanup temp file
     try { fs.unlinkSync(tempWav); } catch { /* ignore */ }
   }
 }
 
+/**
+ * Pre-download the Whisper model in the background.
+ * Call this on extension activation so the first transcription is fast.
+ */
+export function preloadWhisperModel(): Promise<void> {
+  return new Promise((resolve) => {
+    const scriptPath = findScript();
+    if (!scriptPath) {
+      resolve(); // silently skip if script not found
+      return;
+    }
+
+    execFile('python', [scriptPath, '--preload'], {
+      timeout: 120_000, // 2 min for model download
+      windowsHide: true,
+      env: { ...process.env },
+    }, (error) => {
+      // Resolve regardless — preload is best-effort
+      if (error) {
+        // Model will download on first transcription instead
+      }
+      resolve();
+    });
+  });
+}
+
+function findScript(): string | null {
+  const candidates = [
+    path.join(__dirname, '..', 'scripts', 'transcribe.py'),
+    path.join(__dirname, '..', '..', 'scripts', 'transcribe.py'),
+    path.join(__dirname, 'scripts', 'transcribe.py'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function runTranscription(wavPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Find the transcribe.py script
-    // When running from source: app/scripts/transcribe.py
-    // When installed as VSIX: extension/scripts/transcribe.py
-    const scriptCandidates = [
-      path.join(__dirname, '..', 'scripts', 'transcribe.py'),
-      path.join(__dirname, '..', '..', 'scripts', 'transcribe.py'),
-      path.join(__dirname, 'scripts', 'transcribe.py'),
-    ];
-
-    let scriptPath = '';
-    for (const candidate of scriptCandidates) {
-      if (fs.existsSync(candidate)) {
-        scriptPath = candidate;
-        break;
-      }
-    }
+    const scriptPath = findScript();
 
     if (!scriptPath) {
       reject(new SpeechError(
-        'transcribe.py not found in: ' + scriptCandidates.join(', '),
+        'transcribe.py not found',
         'Transcription script not found. Reinstall the extension.',
       ));
       return;
     }
 
     execFile('python', [scriptPath, wavPath], {
-      timeout: 30000, // 30s max for transcription
+      timeout: 30000,
       windowsHide: true,
       env: { ...process.env },
     }, (error, stdout, stderr) => {

@@ -11,8 +11,9 @@ import { LLMRouter } from './llm/llm-router';
 import { EnhanceModule } from './enhance/enhance-module';
 import { OnboardingManager } from './onboarding/onboarding-manager';
 import { UsageTracker } from './telemetry/usage-tracker';
-import { showRemoteWarning, showError } from './ui/notifications';
+import { showRemoteWarning } from './ui/notifications';
 import { ISSUES_URL } from './core/constants';
+import { preloadWhisperModel } from './speech/whisper-client';
 
 let rejectionHandlerRegistered = false;
 
@@ -66,6 +67,11 @@ export function activate(context: vscode.ExtensionContext): void {
       const msg = err instanceof Error ? err.message : String(err);
       outputChannel.appendLine(`[WARN] Audio warm-up failed: ${msg}`);
     });
+
+    // Lazy-download Whisper model in background (so first transcription is fast)
+    preloadWhisperModel().then(() => {
+      outputChannel.appendLine('[INFO] Whisper model ready');
+    });
   }
 
   const commandRouter = new CommandRouter(speechModule, injectModule, statusBar, outputChannel);
@@ -109,50 +115,83 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('prother.enhance', async () => {
-      const lastPrompt = commandRouter.lastPrompt;
+      const lastVoice = commandRouter.lastPrompt;
 
-      if (!lastPrompt) {
-        showError('Speak a prompt first (Ctrl+Shift+V), then click Enhance.');
+      // No voice prompt → show input box directly
+      if (!lastVoice) {
+        const typed = await vscode.window.showInputBox({
+          title: 'Prother: Enhance a prompt',
+          placeHolder: 'Type or paste a prompt to enhance',
+        });
+        if (!typed?.trim()) return;
+        await runEnhancement(typed.trim());
         return;
       }
 
-      // Check for Gemini key
-      const hasKey = await keyManager.getKey('gemini');
-      if (!hasKey) {
-        enhanceButton.setNoKey();
-        const success = await onboardingManager.runSetup();
-        if (!success) return;
-        enhanceButton.setPromptAvailable(lastPrompt);
-      }
-
-      try {
-        enhanceButton.setEnhancing();
-        outputChannel.appendLine(`[INFO] Enhancing: "${lastPrompt}"`);
-
-        const enhanced = await enhanceModule.enhance(lastPrompt);
-        outputChannel.appendLine(`[INFO] Enhanced: "${enhanced}"`);
-
-        // Inject enhanced prompt into the target
-        await commandRouter.processAndInject(enhanced);
-
-        enhanceButton.setDone();
-        void usageTracker.recordPrompt(enhanced.split(/\s+/).length, true);
-      } catch (err) {
-        enhanceButton.setDone();
-        const message = err instanceof Error ? err.message : String(err);
-        outputChannel.appendLine(`[ERROR] Enhancement failed: ${message}`);
-
-        const choice = await vscode.window.showErrorMessage(
-          'Prother: Enhancement failed.',
-          'Keep Raw',
-          'Retry',
+      // Voice prompt exists → toggle logic
+      if (enhanceButton.getState() === 'confirm') {
+        // Second click → enhance immediately (dismiss notification by proceeding)
+        await runEnhancement(lastVoice);
+      } else {
+        // First click → enter confirm state + show notification with "Type New"
+        enhanceButton.setConfirm();
+        const choice = await vscode.window.showInformationMessage(
+          'Click Enhance again to enhance, or:',
+          'Type New',
         );
-
-        if (choice === 'Retry') {
-          await vscode.commands.executeCommand('prother.enhance');
+        // If user clicked "Type New" (and didn't click Enhance second time)
+        if (choice === 'Type New' && enhanceButton.getState() !== 'enhancing') {
+          enhanceButton.setDone();
+          const typed = await vscode.window.showInputBox({
+            title: 'Prother: Enhance a prompt',
+            placeHolder: 'Type or paste a prompt to enhance',
+          });
+          if (!typed?.trim()) return;
+          await runEnhancement(typed.trim());
         }
       }
     }),
+  );
+
+  /** Run the actual enhancement + injection flow */
+  async function runEnhancement(prompt: string): Promise<void> {
+    // Check for Gemini key
+    const hasKey = await keyManager.getKey('gemini');
+    if (!hasKey) {
+      enhanceButton.setNoKey();
+      const success = await onboardingManager.runSetup();
+      if (!success) return;
+    }
+
+    try {
+      enhanceButton.setEnhancing();
+      outputChannel.appendLine(`[INFO] Enhancing: "${prompt}"`);
+
+      const enhanced = await enhanceModule.enhance(prompt);
+      outputChannel.appendLine(`[INFO] Enhanced: "${enhanced}"`);
+
+      await commandRouter.processAndInject(enhanced);
+
+      enhanceButton.setDone();
+      void usageTracker.recordPrompt(enhanced.split(/\s+/).length, true);
+    } catch (err) {
+      enhanceButton.setDone();
+      const message = err instanceof Error ? err.message : String(err);
+      outputChannel.appendLine(`[ERROR] Enhancement failed: ${message}`);
+
+      const choice = await vscode.window.showErrorMessage(
+        'Prother: Enhancement failed.',
+        'Keep Raw',
+        'Retry',
+      );
+
+      if (choice === 'Retry') {
+        await runEnhancement(prompt);
+      }
+    }
+  }
+
+  context.subscriptions.push(
   );
 
   context.subscriptions.push(

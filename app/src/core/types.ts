@@ -60,12 +60,43 @@ export interface TranscriptEvent {
   isFinal: boolean;
 }
 
+/** Enhancement intent categories */
+export type Intent = 'debug' | 'explore' | 'refactor' | 'generate' | 'review' | 'casual';
+
 /** Editor context for prompt enhancement */
 export interface EditorContext {
   activeFile: string;
   selectedCode: string | null;
   language: string;
   workspaceLanguages: string[];
+  /** Top 3 errors/warnings on the active file */
+  diagnostics: DiagnosticSummary[];
+  /** ~5 lines around the cursor (when no selection) */
+  cursorContext: string | null;
+  /** Git branch + changed files summary */
+  gitSummary: GitSummary | null;
+  /** Detected project framework/stack */
+  projectHints: ProjectHints | null;
+  /** Whether the active file has unsaved changes */
+  isDirty: boolean;
+}
+
+export interface DiagnosticSummary {
+  severity: 'error' | 'warning';
+  message: string;
+  line: number;
+  sourceLine: string;
+}
+
+export interface GitSummary {
+  branch: string;
+  modifiedFiles: number;
+  diffSummary: string;
+}
+
+export interface ProjectHints {
+  framework: string | null;
+  primaryLanguage: string;
 }
 
 /** LLM request format */
