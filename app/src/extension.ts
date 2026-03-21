@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ProthState } from './core/types';
 import { StatusBar } from './ui/status-bar';
+import { TargetSelector } from './ui/target-selector';
 import { SpeechModule } from './speech/speech-module';
 import { InjectModule } from './inject/inject-module';
 import { CommandRouter } from './core/command-router';
@@ -41,6 +42,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const statusBar = new StatusBar();
   context.subscriptions.push(statusBar);
 
+  const targetSelector = new TargetSelector();
+  context.subscriptions.push(targetSelector);
+
   const keyManager = new KeyManager(context.secrets);
   context.subscriptions.push(keyManager);
 
@@ -51,13 +55,12 @@ export function activate(context: vscode.ExtensionContext): void {
     outputChannel.appendLine('[WARN] Voice input not available in this environment');
   } else {
     // Pre-warm PowerShell in background (compiles C# interop ~2-3s)
-    // After this, Ctrl+Shift+V starts recording instantly
     void speechModule.warmUp().then(() => {
       outputChannel.appendLine('[INFO] Audio recorder warmed up and ready');
     });
   }
 
-  const injectModule = new InjectModule();
+  const injectModule = new InjectModule(() => targetSelector.getSelectedTarget());
   context.subscriptions.push(injectModule);
 
   const commandRouter = new CommandRouter(speechModule, injectModule, statusBar, outputChannel);
@@ -75,6 +78,14 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('prother.activate', async () => {
       await commandRouter.activate('hotkey');
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('prother.cycleTarget', () => {
+      targetSelector.cycle();
+      const target = targetSelector.getSelectedTarget();
+      outputChannel.appendLine(`[INFO] Target switched to: ${target}`);
     }),
   );
 

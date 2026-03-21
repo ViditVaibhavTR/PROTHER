@@ -58,6 +58,10 @@
       {
         "command": "prother.reportIssue",
         "title": "Prother: Report Issue"
+      },
+      {
+        "command": "prother.cycleTarget",
+        "title": "Prother: Switch Target (Claude Code / Copilot)"
       }
     ],
     "keybindings": [

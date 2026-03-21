@@ -7,27 +7,28 @@ import type { AIExtension, InjectResult, InjectionStrategy } from '../core/types
 
 /**
  * Orchestrates text injection into AI extensions.
+ * Target is selected via the status bar TargetSelector — no popups.
  * Tries strategies in priority order: Command → Terminal → Clipboard.
- * Falls back to clipboard-copy with notification as ultimate fallback.
  */
 export class InjectModule implements vscode.Disposable {
   private readonly strategies: InjectionStrategy[];
   private readonly detector: ExtensionDetector;
+  private readonly getTarget: () => string;
 
-  constructor() {
+  constructor(getTarget: () => string) {
     this.strategies = [new CommandStrategy(), new TerminalStrategy(), new ClipboardStrategy()];
     this.detector = new ExtensionDetector();
+    this.getTarget = getTarget;
   }
 
   dispose(): void {
-    // Strategies and detector hold no subscriptions, but interface is consistent
+    // Strategies and detector hold no subscriptions
   }
 
   async inject(text: string, preferredTarget?: string): Promise<InjectResult> {
     const installed = this.detector.detectExtensions();
 
     if (installed.length === 0) {
-      // No AI extensions found — clipboard fallback
       await vscode.env.clipboard.writeText(text);
       vscode.window.showInformationMessage(
         'Prother: No AI extensions detected. Prompt copied to clipboard.',
@@ -36,7 +37,7 @@ export class InjectModule implements vscode.Disposable {
       return { success: true, method: 'clipboard-manual', error: 'No AI extensions detected' };
     }
 
-    const target = preferredTarget ?? (await this.selectTarget(installed));
+    const target = preferredTarget ?? this.selectTarget(installed);
 
     // Try strategies in cascade order
     for (const strategy of this.strategies) {
@@ -53,7 +54,7 @@ export class InjectModule implements vscode.Disposable {
       }
     }
 
-    // Ultimate fallback — should not reach here since ClipboardStrategy always handles
+    // Ultimate fallback
     await vscode.env.clipboard.writeText(text);
     vscode.window.showInformationMessage(
       'Prother: Prompt copied to clipboard. Paste into your AI assistant.',
@@ -67,26 +68,11 @@ export class InjectModule implements vscode.Disposable {
     return this.detector.detectExtensions();
   }
 
-  private async selectTarget(installed: AIExtension[]): Promise<string> {
-    if (installed.length === 1) return installed[0].id;
-
-    // Prefer visible panel
-    const visible = installed.find((ext) => ext.isVisible);
-    if (visible) return visible.id;
-
-    // Check configured default
-    const configured = vscode.workspace
-      .getConfiguration('prother')
-      .get<string>('inject.defaultTarget');
-    if (configured && configured !== 'auto' && installed.some((e) => e.id === configured)) {
-      return configured;
-    }
-
-    // Ask user
-    const choice = await vscode.window.showQuickPick(
-      installed.map((e) => ({ label: e.displayName, description: e.id, id: e.id })),
-      { placeHolder: 'Which AI assistant should receive the prompt?' },
-    );
-    return choice?.id ?? installed[0].id;
+  private selectTarget(installed: AIExtension[]): string {
+    // Use the status bar selection
+    const selected = this.getTarget();
+    if (installed.some((e) => e.id === selected)) return selected;
+    // Fallback: first installed
+    return installed[0].id;
   }
 }

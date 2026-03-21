@@ -87,5 +87,22 @@ export const CLI_TERMINAL_PATTERNS: Record<string, RegExp> = {
   'gpt-engineer': /gpt-engineer/i,
 };
 
+/** Reverse mapping: command name → extension ID (for activity tracking) */
+export const COMMAND_TO_EXTENSION: Record<string, string> = {
+  // Claude Code
+  'claude-vscode.focus': 'anthropic.claude-code',
+  'claude-vscode.sidebar.open': 'anthropic.claude-code',
+  'claude-vscode.editor.open': 'anthropic.claude-code',
+  'claude-vscode.editor.openLast': 'anthropic.claude-code',
+  'claude-vscode.primaryEditor.open': 'anthropic.claude-code',
+  'claude-vscode.newConversation': 'anthropic.claude-code',
+  // GitHub Copilot Chat
+  'workbench.action.chat.open': 'github.copilot-chat',
+  // Cline
+  'cline.plusButtonClicked': 'saoudrizwan.claude-dev',
+  // Continue
+  'continue.focusContinueInput': 'continue.continue',
+};
+
 /** GitHub issues URL for Report Issue command */
 export const ISSUES_URL = 'https://github.com/ViditVaibhavTR/PROTHER/issues/new';
