@@ -10,16 +10,22 @@ import { showError, showInfo } from '../ui/notifications';
 
 /**
  * Central dispatcher and state machine.
- * Routes between: IDLE → LISTENING → PROCESSING → INJECTING → IDLE
- * Toggle: pressing Alt+V while listening stops and injects what we have.
+ * IDLE → LISTENING → PROCESSING → INJECTING → IDLE
+ * Toggle: Ctrl+Shift+V while listening stops and injects.
+ * Stores last prompt for the Enhance button.
  */
 export class CommandRouter implements vscode.Disposable {
   private state: ProthState = ProthState.IDLE;
+  private _lastPrompt = '';
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly outputChannel: vscode.OutputChannel;
 
   private readonly _onStateChange = new TypedEvent<ProthState>();
   readonly onStateChange = this._onStateChange.event;
+
+  private readonly _onLastPromptChange = new TypedEvent<string>();
+  readonly onLastPromptChange = this._onLastPromptChange.event;
 
   constructor(
     private readonly speechModule: SpeechModule,
@@ -60,6 +66,11 @@ export class CommandRouter implements vscode.Disposable {
     );
   }
 
+  /** The last successfully spoken prompt (for enhance button) */
+  get lastPrompt(): string {
+    return this._lastPrompt;
+  }
+
   /** Activate voice input */
   async activate(trigger: Trigger): Promise<void> {
     this.outputChannel.appendLine(`[INFO] Activate triggered via: ${trigger}`);
@@ -69,12 +80,11 @@ export class CommandRouter implements vscode.Disposable {
       this.outputChannel.appendLine('[INFO] Toggle: stopping recording and transcribing');
       this.transitionTo(ProthState.PROCESSING);
       await this.speechModule.stopAndTranscribe();
-      // Transcript and errors are handled via onTranscript/onError events
       return;
     }
 
     // Only activate from IDLE
-    if (this.state !== ProthState.IDLE && this.state !== ProthState.SETUP) {
+    if (this.state !== ProthState.IDLE) {
       this.outputChannel.appendLine(`[WARN] Cannot activate from state: ${this.state}`);
       return;
     }
@@ -112,16 +122,17 @@ export class CommandRouter implements vscode.Disposable {
     }
 
     this.outputChannel.appendLine(`[INFO] Transcript: "${text}"`);
+
+    // Store last prompt for enhance button
+    this._lastPrompt = text;
+    this._onLastPromptChange.fire(text);
+
     await this.processAndInject(text);
   }
 
   /** Process transcript and inject into target */
-  private async processAndInject(text: string): Promise<void> {
+  async processAndInject(text: string): Promise<void> {
     try {
-      this.transitionTo(ProthState.PROCESSING);
-
-      // Phase 1: direct injection (no enhancement)
-      // Phase 2 will add "enhance:" directive detection here
       this.transitionTo(ProthState.INJECTING);
       const result = await this.injectModule.inject(text);
 
@@ -137,11 +148,10 @@ export class CommandRouter implements vscode.Disposable {
       this.outputChannel.appendLine(`[ERROR] Process/inject failed: ${message}`);
       showError('Failed to inject prompt. Text copied to clipboard.');
 
-      // Emergency clipboard fallback
       try {
         await vscode.env.clipboard.writeText(text);
       } catch {
-        // Can't even write to clipboard — nothing more we can do
+        // Can't even write to clipboard
       }
     } finally {
       this.transitionTo(ProthState.IDLE);
@@ -155,9 +165,13 @@ export class CommandRouter implements vscode.Disposable {
     this._onStateChange.fire(newState);
   }
 
-  /** Recover from error state to idle after a delay */
   private recoverToIdle(): void {
-    setTimeout(() => {
+    // Clear previous recovery timer to prevent stacking
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer);
+    }
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = null;
       if (this.state === ProthState.ERROR) {
         this.transitionTo(ProthState.IDLE);
       }
@@ -169,9 +183,13 @@ export class CommandRouter implements vscode.Disposable {
   }
 
   dispose(): void {
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer);
+    }
     for (const d of this.disposables) {
       d.dispose();
     }
     this._onStateChange.dispose();
+    this._onLastPromptChange.dispose();
   }
 }

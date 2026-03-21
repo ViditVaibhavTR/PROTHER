@@ -6,6 +6,12 @@ export const SECRET_KEY_PREFIX = 'prother.apikey.';
 /** Error state display timeout (ms) */
 export const ERROR_DISPLAY_TIMEOUT_MS = 3000;
 
+/** Minimum gap between LLM API requests to the same provider (ms) */
+export const MIN_REQUEST_GAP_MS = 4000;
+
+/** Gemini API base URL */
+export const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta';
+
 /** Known AI extensions for injection targeting */
 export const AI_EXTENSION_DEFS: AIExtensionDef[] = [
   {

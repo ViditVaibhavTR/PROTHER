@@ -59,3 +59,26 @@ export interface TranscriptEvent {
   text: string;
   isFinal: boolean;
 }
+
+/** Editor context for prompt enhancement */
+export interface EditorContext {
+  activeFile: string;
+  selectedCode: string | null;
+  language: string;
+  workspaceLanguages: string[];
+}
+
+/** LLM request format */
+export interface LLMRequest {
+  systemPrompt: string;
+  userMessage: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
+/** LLM response format */
+export interface LLMResponse {
+  text: string;
+  tokensUsed?: number;
+  provider: string;
+}
