@@ -2,7 +2,8 @@
   "name": "prother",
   "displayName": "Prother - Voice Prompts for AI Coding",
   "description": "Speak your coding prompts instead of typing them. Works with Copilot, Cline, Claude Code, and more.",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "icon": "icon.png",
   "publisher": "ViditVaibhav",
   "license": "MIT",
   "engines": {

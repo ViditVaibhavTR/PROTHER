@@ -25,7 +25,7 @@ export class InjectModule implements vscode.Disposable {
     // Strategies and detector hold no subscriptions
   }
 
-  async inject(text: string, preferredTarget?: string): Promise<InjectResult> {
+  async inject(text: string, preferredTarget?: string, clearFirst = false): Promise<InjectResult> {
     const installed = this.detector.detectExtensions();
 
     if (installed.length === 0) {
@@ -42,7 +42,7 @@ export class InjectModule implements vscode.Disposable {
     // Try strategies in cascade order
     for (const strategy of this.strategies) {
       if (await strategy.canHandle(target)) {
-        const success = await strategy.inject(text, target);
+        const success = await strategy.inject(text, target, clearFirst);
         if (success) {
           return {
             success: true,

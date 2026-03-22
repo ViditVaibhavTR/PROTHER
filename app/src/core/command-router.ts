@@ -130,11 +130,11 @@ export class CommandRouter implements vscode.Disposable {
     await this.processAndInject(text);
   }
 
-  /** Process transcript and inject into target */
-  async processAndInject(text: string): Promise<void> {
+  /** Process transcript and inject into target. clearFirst=true opens new conversation (for enhance). */
+  async processAndInject(text: string, clearFirst = false): Promise<void> {
     try {
       this.transitionTo(ProthState.INJECTING);
-      const result = await this.injectModule.inject(text);
+      const result = await this.injectModule.inject(text, undefined, clearFirst);
 
       if (result.success) {
         this.outputChannel.appendLine(

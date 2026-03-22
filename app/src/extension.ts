@@ -178,7 +178,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const enhanced = await enhanceModule.enhance(prompt);
       outputChannel.appendLine(`[INFO] Enhanced: "${enhanced}"`);
 
-      await commandRouter.processAndInject(enhanced);
+      await commandRouter.processAndInject(enhanced, true);
 
       enhanceButton.setDone();
       void usageTracker.recordPrompt(enhanced.split(/\s+/).length, true);
