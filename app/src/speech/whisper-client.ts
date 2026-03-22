@@ -5,7 +5,7 @@ import * as path from 'path';
 import { SpeechError } from '../core/errors';
 
 /**
- * Transcribe a WAV audio buffer using local faster-whisper.
+ * Transcribe a WAV audio buffer using local Moonshine ONNX.
  * Writes WAV to temp file, calls Python transcribe.py, returns text.
  * Zero API keys needed — runs entirely on-device.
  */
@@ -81,15 +81,15 @@ function runTranscription(wavPath: string): Promise<string> {
     }, (error, stdout, stderr) => {
       if (error) {
         const msg = stderr?.trim() || error.message;
-        if (msg.includes('faster-whisper not installed')) {
+        if (msg.includes('moonshine not installed')) {
           reject(new SpeechError(
             msg,
-            'faster-whisper is not installed. Run: pip install faster-whisper',
+            'Moonshine is not installed. Run: pip install useful-moonshine-onnx',
           ));
         } else {
           reject(new SpeechError(
             'Transcription failed: ' + msg,
-            'Speech recognition failed. Check that Python and faster-whisper are installed.',
+            'Speech recognition failed. Check that Python and Moonshine ONNX are installed.',
           ));
         }
         return;

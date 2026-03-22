@@ -1,21 +1,17 @@
 """
-Prother local transcription via faster-whisper.
+Prother local transcription via Moonshine ONNX.
 
 Usage:
   python transcribe.py <wav_file_path>     — transcribe audio
   python transcribe.py --preload           — download model only (lazy init)
 
-Model size controlled by PROTHER_WHISPER_MODEL env var (default: base).
+Model controlled by PROTHER_MOONSHINE_MODEL env var (default: moonshine/tiny).
 """
 import sys
 import os
 
-def get_model_size():
-    return os.environ.get("PROTHER_WHISPER_MODEL", "base")
-
-def load_model():
-    from faster_whisper import WhisperModel
-    return WhisperModel(get_model_size(), device="cpu", compute_type="int8")
+def get_model():
+    return os.environ.get("PROTHER_MOONSHINE_MODEL", "moonshine/tiny")
 
 def main():
     if len(sys.argv) < 2:
@@ -23,14 +19,27 @@ def main():
         sys.exit(1)
 
     try:
-        from faster_whisper import WhisperModel  # noqa: F401
+        import moonshine_onnx
     except ImportError:
-        print("ERROR:faster-whisper not installed. Run: pip install faster-whisper", file=sys.stderr)
+        print("ERROR:moonshine not installed. Run: pip install useful-moonshine-onnx", file=sys.stderr)
         sys.exit(1)
 
-    # --preload: just download the model and exit
+    model = get_model()
+
+    # --preload: download model and exit
     if sys.argv[1] == "--preload":
-        load_model()
+        # Generate a tiny silent WAV to trigger model download
+        import numpy as np
+        import tempfile, wave
+        silence = np.zeros(16000, dtype=np.int16)  # 1s silence at 16kHz
+        tmp = os.path.join(tempfile.gettempdir(), "prother_preload.wav")
+        with wave.open(tmp, "w") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(silence.tobytes())
+        moonshine_onnx.transcribe(tmp, model)
+        os.remove(tmp)
         print("MODEL_READY")
         return
 
@@ -39,10 +48,8 @@ def main():
         print(f"ERROR:File not found: {wav_path}", file=sys.stderr)
         sys.exit(1)
 
-    model = load_model()
-    segments, info = model.transcribe(wav_path, beam_size=5, language="en")
-    text = " ".join(segment.text for segment in segments).strip()
-
+    result = moonshine_onnx.transcribe(wav_path, model)
+    text = " ".join(result).strip() if isinstance(result, list) else str(result).strip()
     print(text)
 
 if __name__ == "__main__":
