@@ -9,31 +9,22 @@ import { SpeechError } from '../core/errors';
 const MAX_RECORDING_MS = 60_000; // 60s safety cap
 
 /**
- * Records audio using a **pre-warmed** PowerShell process.
+ * Records audio using SoX (Sound eXchange) portable.
  *
- * On construction, spawns PowerShell and compiles the C# interop once (~2-3s).
- * After warm-up, start()/stop() are near-instant (~10ms) because they just
- * send commands to the already-running process via stdin.
+ * SoX is bundled as vendor/sox-14.4.2/sox.exe (~2MB).
+ * Uses `-t waveaudio default` to capture from the default Windows audio device.
+ * Recording starts instantly (no PowerShell compile step).
  *
- * Protocol (extension ↔ PowerShell via stdin/stdout lines):
- *   Extension sends          PowerShell responds
- *   ─────────────────────    ────────────────────
- *   (process starts)     →   "READY"
- *   "record <filepath>"  →   "RECORDING"
- *   "stop"               →   "SAVED"
- *   "exit"               →   (process exits)
+ * Flow:
+ *   start() → spawn sox.exe recording to temp WAV
+ *   stop()  → kill sox process, read WAV file
  */
 export class AudioRecorder implements vscode.Disposable {
   private proc: ChildProcess | null = null;
   private tempWav = '';
   private recording = false;
-  private warm = false;
   private safetyTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Pending resolvers for async command responses
-  private readyResolver: (() => void) | null = null;
-  private recordingResolver: (() => void) | null = null;
-  private savedResolver: (() => void) | null = null;
+  private soxPath: string | null = null;
 
   private readonly _onError = new TypedEvent<SpeechError>();
   readonly onError = this._onError.event;
@@ -41,10 +32,11 @@ export class AudioRecorder implements vscode.Disposable {
   private readonly _onStopped = new TypedEvent<void>();
   readonly onStopped = this._onStopped.event;
 
-  /** Whether recording is available (Windows desktop only) */
+  /** Whether recording is available (Windows + SoX found) */
   isAvailable(): boolean {
     if (vscode.env.remoteName) return false;
-    return process.platform === 'win32';
+    if (process.platform !== 'win32') return false;
+    return this.findSox() !== null;
   }
 
   /** Get reason why recording is unavailable */
@@ -53,7 +45,10 @@ export class AudioRecorder implements vscode.Disposable {
       return 'Voice input is not available in remote environments.';
     }
     if (process.platform !== 'win32') {
-      return 'Voice input currently requires Windows. macOS/Linux support coming in Phase 4.';
+      return 'Voice input currently requires Windows.';
+    }
+    if (!this.findSox()) {
+      return 'SoX audio tool not found. Reinstall the extension.';
     }
     return 'Voice input is not available.';
   }
@@ -62,46 +57,13 @@ export class AudioRecorder implements vscode.Disposable {
     return this.recording;
   }
 
-  isWarm(): boolean {
-    return this.warm;
-  }
-
-  /**
-   * Spawn the PowerShell process and compile the C# interop.
-   * Call this once on extension activation — it resolves when the
-   * process is ready to accept "record" commands instantly.
-   */
+  /** No warm-up needed for SoX — it starts instantly */
   async warmUp(): Promise<void> {
-    if (this.warm || this.proc) return;
-    if (!this.isAvailable()) return;
-
-    this.spawnProcess();
-
-    // Wait for "READY" signal (C# compiled, process warm)
-    return new Promise<void>((resolve, reject) => {
-      this.readyResolver = resolve;
-      // Timeout: if PowerShell doesn't respond in 10s, check if process is alive
-      setTimeout(() => {
-        if (this.readyResolver) {
-          this.readyResolver = null;
-          if (this.proc && !this.proc.killed) {
-            // Process alive but slow — resolve and hope for the best
-            resolve();
-          } else {
-            reject(new SpeechError(
-              'PowerShell warm-up timed out',
-              'Audio recorder failed to start. Try reloading VS Code.',
-            ));
-          }
-        }
-      }, 10_000);
-    });
+    // Just verify SoX exists
+    this.findSox();
   }
 
-  /**
-   * Start recording audio. Near-instant if warmUp() was called.
-   * Resolves when PowerShell confirms "RECORDING".
-   */
+  /** Start recording audio from the default microphone */
   async start(): Promise<void> {
     if (this.recording) {
       await this.stop();
@@ -114,57 +76,50 @@ export class AudioRecorder implements vscode.Disposable {
       );
     }
 
-    // If not warm yet, warm up now (first-time fallback)
-    if (!this.warm || !this.proc) {
-      await this.warmUp();
-    }
-
-    if (!this.proc) {
+    const sox = this.findSox();
+    if (!sox) {
       throw new SpeechError(
-        'PowerShell process not available',
-        'Could not start audio recording. Try reloading VS Code.',
+        'SoX not found',
+        'SoX audio tool not found. Reinstall the extension.',
       );
     }
 
     this.tempWav = path.join(os.tmpdir(), 'prother-' + Date.now() + '.wav');
 
-    // Send record command — PowerShell responds with "RECORDING"
-    return new Promise<void>((resolve, reject) => {
-      this.recordingResolver = () => {
-        this.recording = true;
-
-        // Safety cap: auto-stop after 60s
-        this.safetyTimer = setTimeout(() => {
-          if (this.recording) {
-            void this.stop();
-          }
-        }, MAX_RECORDING_MS);
-
-        resolve();
-      };
-
-      try {
-        const wavPathForPs = this.tempWav.replace(/\\/g, '\\\\');
-        this.proc?.stdin?.write('record ' + wavPathForPs + '\n');
-      } catch (err) {
-        this.recordingResolver = null;
-        reject(new SpeechError(
-          'Failed to send record command: ' + (err instanceof Error ? err.message : String(err)),
-          'Could not start recording. Try reloading VS Code.',
-        ));
-      }
-
-      // Timeout: if no "RECORDING" response in 3s, reject
-      setTimeout(() => {
-        if (this.recordingResolver) {
-          this.recordingResolver = null;
-          reject(new SpeechError(
-            'Timeout waiting for RECORDING response',
-            'Recording did not start. Try pressing Ctrl+Shift+V again.',
-          ));
-        }
-      }, 3000);
+    // sox -t waveaudio default -r 16000 -c 1 -b 16 output.wav
+    this.proc = spawn(sox, [
+      '-t', 'waveaudio', 'default',  // input: default Windows audio device
+      '-r', '16000',                   // 16kHz sample rate (optimal for Whisper/Moonshine)
+      '-c', '1',                       // mono
+      '-b', '16',                      // 16-bit
+      this.tempWav,                    // output WAV file
+    ], {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
+
+    this.proc.on('error', (err) => {
+      this._onError.fire(
+        new SpeechError(
+          'SoX process error: ' + err.message,
+          'Could not start audio recording.',
+        ),
+      );
+      this.recording = false;
+    });
+
+    this.proc.on('close', () => {
+      this.proc = null;
+    });
+
+    this.recording = true;
+
+    // Safety cap: auto-stop after 60s
+    this.safetyTimer = setTimeout(() => {
+      if (this.recording) {
+        void this.stop();
+      }
+    }, MAX_RECORDING_MS);
   }
 
   /** Stop recording and return the WAV file as a Buffer */
@@ -177,31 +132,28 @@ export class AudioRecorder implements vscode.Disposable {
       this.safetyTimer = null;
     }
 
-    if (!this.proc) return null;
+    if (this.proc) {
+      // Send Ctrl+C (SIGINT) to stop SoX gracefully — it finalizes the WAV header
+      this.proc.kill('SIGINT');
 
-    // Send stop command — PowerShell responds with "SAVED"
-    await new Promise<void>((resolve) => {
-      this.savedResolver = resolve;
-
-      try {
-        this.proc?.stdin?.write('stop\n');
-      } catch {
-        this.savedResolver = null;
-        resolve();
-      }
-
-      // Timeout: if no "SAVED" response in 5s, resolve anyway
-      setTimeout(() => {
-        if (this.savedResolver) {
-          this.savedResolver = null;
+      // Wait for process to finish (max 3s)
+      const currentProc = this.proc;
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          currentProc?.kill();
           resolve();
-        }
-      }, 5000);
-    });
+        }, 3000);
+
+        currentProc.on('close', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
+    }
 
     this._onStopped.fire();
 
-    // Read the WAV file then clean up
+    // Read the WAV file
     try {
       if (fs.existsSync(this.tempWav)) {
         const wav = fs.readFileSync(this.tempWav);
@@ -218,80 +170,24 @@ export class AudioRecorder implements vscode.Disposable {
     return null;
   }
 
-  /** Spawn the long-lived PowerShell process */
-  private spawnProcess(): void {
-    const scriptPath = path.join(os.tmpdir(), 'prother-recorder.ps1');
-    fs.writeFileSync(scriptPath, buildPsLoopScript(), 'utf8');
+  /** Find the bundled SoX executable */
+  private findSox(): string | null {
+    if (this.soxPath) return this.soxPath;
 
-    this.proc = spawn('powershell', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy', 'Bypass',
-      '-File', scriptPath,
-    ], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    const candidates = [
+      path.join(__dirname, '..', 'vendor', 'sox-14.4.2', 'sox.exe'),
+      path.join(__dirname, '..', '..', 'vendor', 'sox-14.4.2', 'sox.exe'),
+      path.join(__dirname, 'vendor', 'sox-14.4.2', 'sox.exe'),
+    ];
 
-    // Parse stdout lines for protocol messages
-    let buffer = '';
-    this.proc.stdout?.on('data', (data: Buffer) => {
-      buffer += data.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? ''; // keep incomplete last line
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (line === 'READY') {
-          this.warm = true;
-          if (this.readyResolver) {
-            this.readyResolver();
-            this.readyResolver = null;
-          }
-        } else if (line === 'RECORDING') {
-          if (this.recordingResolver) {
-            this.recordingResolver();
-            this.recordingResolver = null;
-          }
-        } else if (line === 'SAVED') {
-          if (this.savedResolver) {
-            this.savedResolver();
-            this.savedResolver = null;
-          }
-        } else if (line.startsWith('ERROR:')) {
-          const msg = line.replace('ERROR:', '').trim();
-          this._onError.fire(
-            new SpeechError(msg, 'Audio recording failed. Check your microphone.'),
-          );
-        }
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        this.soxPath = candidate;
+        return candidate;
       }
-    });
+    }
 
-    this.proc.stderr?.on('data', (data: Buffer) => {
-      const msg = data.toString().trim();
-      if (msg) {
-        this._onError.fire(
-          new SpeechError('PowerShell: ' + msg, 'Audio recording failed.'),
-        );
-      }
-    });
-
-    this.proc.on('error', (err) => {
-      this._onError.fire(
-        new SpeechError(
-          'PowerShell process error: ' + err.message,
-          'Could not start audio recording.',
-        ),
-      );
-      this.proc = null;
-      this.warm = false;
-    });
-
-    this.proc.on('close', () => {
-      this.proc = null;
-      this.warm = false;
-      this.recording = false;
-    });
+    return null;
   }
 
   private cleanupWav(): void {
@@ -304,101 +200,15 @@ export class AudioRecorder implements vscode.Disposable {
   }
 
   dispose(): void {
-    this.recording = false;
+    if (this.recording) {
+      this.recording = false;
+      this.proc?.kill('SIGINT');
+    }
     if (this.safetyTimer) {
       clearTimeout(this.safetyTimer);
-      this.safetyTimer = null;
-    }
-    if (this.proc) {
-      try {
-        this.proc.stdin?.write('exit\n');
-      } catch { /* ignore */ }
-      setTimeout(() => this.proc?.kill(), 1000);
     }
     this.cleanupWav();
     this._onError.dispose();
     this._onStopped.dispose();
   }
-}
-
-/**
- * Build the PowerShell script that runs as a long-lived command loop.
- * Phase 1: Compile C# interop (slow, happens once).
- * Phase 2: Loop waiting for commands via stdin (instant responses).
- */
-function buildPsLoopScript(): string {
-  const lines = [
-    '# Prother audio recorder — long-lived PowerShell process',
-    '# Protocol: receives commands on stdin, responds on stdout',
-    '',
-    '# Phase 1: Compile C# interop (slow, ~2s)',
-    'Add-Type -TypeDefinition @"',
-    'using System;',
-    'using System.Runtime.InteropServices;',
-    'using System.Text;',
-    'public class WinMM {',
-    '    [DllImport("winmm.dll", CharSet = CharSet.Auto)]',
-    '    public static extern int mciSendString(string command, StringBuilder returnValue, int returnLength, IntPtr hwndCallback);',
-    '}',
-    '"@',
-    '',
-    '[Console]::Out.WriteLine("READY")',
-    '[Console]::Out.Flush()',
-    '',
-    '# Phase 2: Command loop',
-    '$recording = $false',
-    'while ($true) {',
-    '    try {',
-    '        $line = [Console]::In.ReadLine()',
-    '    } catch {',
-    '        break',
-    '    }',
-    '    if ($null -eq $line) { break }',
-    '    $line = $line.Trim()',
-    '',
-    '    if ($line -eq "exit") {',
-    '        if ($recording) {',
-    '            [WinMM]::mciSendString("stop prother_rec", $null, 0, [IntPtr]::Zero) | Out-Null',
-    '            [WinMM]::mciSendString("close prother_rec", $null, 0, [IntPtr]::Zero) | Out-Null',
-    '        }',
-    '        break',
-    '    }',
-    '',
-    '    if ($line.StartsWith("record ")) {',
-    '        $file = $line.Substring(7).Trim()',
-    '        $sb = New-Object System.Text.StringBuilder 256',
-    '        $r = [WinMM]::mciSendString("open new Type waveaudio Alias prother_rec", $sb, 256, [IntPtr]::Zero)',
-    '        if ($r -ne 0) {',
-    '            [Console]::Out.WriteLine("ERROR:Cannot open audio device (code $r)")',
-    '            [Console]::Out.Flush()',
-    '            continue',
-    '        }',
-    '        $r = [WinMM]::mciSendString("record prother_rec", $sb, 256, [IntPtr]::Zero)',
-    '        if ($r -ne 0) {',
-    '            [WinMM]::mciSendString("close prother_rec", $null, 0, [IntPtr]::Zero) | Out-Null',
-    '            [Console]::Out.WriteLine("ERROR:Cannot start recording (code $r)")',
-    '            [Console]::Out.Flush()',
-    '            continue',
-    '        }',
-    '        $recording = $true',
-    '        $global:wavFile = $file',
-    '        [Console]::Out.WriteLine("RECORDING")',
-    '        [Console]::Out.Flush()',
-    '        continue',
-    '    }',
-    '',
-    '    if ($line -eq "stop") {',
-    '        if ($recording) {',
-    '            [WinMM]::mciSendString("stop prother_rec", $null, 0, [IntPtr]::Zero) | Out-Null',
-    '            [WinMM]::mciSendString("save prother_rec ""$($global:wavFile)""", $null, 0, [IntPtr]::Zero) | Out-Null',
-    '            [WinMM]::mciSendString("close prother_rec", $null, 0, [IntPtr]::Zero) | Out-Null',
-    '            $recording = $false',
-    '        }',
-    '        [Console]::Out.WriteLine("SAVED")',
-    '        [Console]::Out.Flush()',
-    '        continue',
-    '    }',
-    '}',
-  ];
-  return lines.join('\r\n');
 }

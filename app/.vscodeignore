@@ -8,3 +8,9 @@ tsconfig.json
 esbuild.mjs
 *.map
 instructions/
+vendor/**/*.zip
+vendor/**/*.pdf
+vendor/**/*.txt
+vendor/**/wget.*
+vendor/**/batch-example.bat
+test-*.ps1

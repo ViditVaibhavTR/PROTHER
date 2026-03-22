@@ -5,13 +5,13 @@ Usage:
   python transcribe.py <wav_file_path>     — transcribe audio
   python transcribe.py --preload           — download model only (lazy init)
 
-Model controlled by PROTHER_MOONSHINE_MODEL env var (default: moonshine/tiny).
+Model controlled by PROTHER_MOONSHINE_MODEL env var (default: moonshine/base).
 """
 import sys
 import os
 
 def get_model():
-    return os.environ.get("PROTHER_MOONSHINE_MODEL", "moonshine/tiny")
+    return os.environ.get("PROTHER_MOONSHINE_MODEL", "moonshine/base")
 
 def main():
     if len(sys.argv) < 2:

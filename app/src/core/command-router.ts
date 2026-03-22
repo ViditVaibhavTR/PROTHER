@@ -134,6 +134,7 @@ export class CommandRouter implements vscode.Disposable {
     this._onLastPromptChange.fire(text);
 
     const target = this.getTarget();
+    this.outputChannel.appendLine(`[DEBUG] Target for injection: ${target}`);
 
     // Claude Code: deferred injection — don't paste yet, let user choose
     if (target === 'anthropic.claude-code') {
