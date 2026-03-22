@@ -187,8 +187,14 @@ export function activate(context: vscode.ExtensionContext): void {
       const message = err instanceof Error ? err.message : String(err);
       outputChannel.appendLine(`[ERROR] Enhancement failed: ${message}`);
 
+      // Show specific message for rate limits
+      const isRateLimit = message.includes('429') || message.includes('rate limit') || message.includes('Rate limit');
+      const errorMsg = isRateLimit
+        ? 'Prother: Gemini rate limit reached. Wait ~60s and try again.'
+        : 'Prother: Enhancement failed.';
+
       const choice = await vscode.window.showErrorMessage(
-        'Prother: Enhancement failed.',
+        errorMsg,
         'Keep Raw',
         'Retry',
       );

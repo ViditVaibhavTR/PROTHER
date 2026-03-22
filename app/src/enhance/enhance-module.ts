@@ -24,7 +24,7 @@ export class EnhanceModule {
     const response = await this.llmRouter.complete({
       systemPrompt,
       userMessage,
-      maxTokens: 1024,
+      maxTokens: 4096,
       temperature: intent === 'casual' ? 0.3 : 0.2,
     });
 

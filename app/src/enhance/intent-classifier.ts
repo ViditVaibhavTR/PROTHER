@@ -4,7 +4,7 @@ import type { Intent, EditorContext } from '../core/types';
 const DEBUG_WORDS = /\b(fix|error|bug|crash|broken|wrong|failing|issue|exception|undefined is not|cannot read|stack trace|not working|doesnt work|doesn't work)\b/i;
 const EXPLORE_WORDS = /\b(explain|what does|how does|why does|understand|walk.?through|show me|describe|tell me|what is|what are|how to)\b/i;
 const REFACTOR_WORDS = /\b(refactor|rename|extract|clean.?up|improve|optimize|simplify|convert|change.?to|use.?instead|restructure|rewrite)\b/i;
-const GENERATE_WORDS = /\b(add|create|new|build|implement|make|write|set.?up|scaffold|generate|design|initialize)\b/i;
+const GENERATE_WORDS = /\b(add|create|new|build|implement|make|write|set.?up|scaffold|generate|design|initialize|website|webpage|page|section|layout|template|landing|app|feature|tool|extension|project|recommend)\b/i;
 const REVIEW_WORDS = /\b(review|diff|changes|commit|PR|pull.?request|merge|what.?changed|look.?at.?the|check.?the)\b/i;
 const CODE_WORDS = /\b(code|function|class|method|api|test|component|file|variable|database|endpoint|route|import|module|package|server|client|query|schema|hook|state|prop|async|await|return|const|let|var)\b/i;
 
@@ -28,7 +28,8 @@ export function classifyIntent(prompt: string, context: EditorContext): Intent {
   if (REFACTOR_WORDS.test(prompt)) scores.refactor += 5;
   if (GENERATE_WORDS.test(prompt)) scores.generate += 5;
   if (REVIEW_WORDS.test(prompt)) scores.review += 5;
-  if (!CODE_WORDS.test(prompt) && !DEBUG_WORDS.test(prompt)) scores.casual += 5;
+  // Casual is the fallback — only gets points if NOTHING else matched
+  if (!CODE_WORDS.test(prompt) && !DEBUG_WORDS.test(prompt) && !GENERATE_WORDS.test(prompt) && !EXPLORE_WORDS.test(prompt)) scores.casual += 3;
 
   // --- Editor state signals ---
   const hasErrors = context.diagnostics.some((d) => d.severity === 'error');

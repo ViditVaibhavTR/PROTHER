@@ -50,7 +50,15 @@ Your job:
 4. Reference the git changes from the context below
 5. Output ONLY the enhanced prompt — no explanations, no markdown formatting`,
 
-  casual: `You are a prompt clarifier. The input was captured via voice-to-text and may have transcription errors. Fix grammar, remove filler words, and correct obvious speech-to-text mistakes. Keep the same tone and intent. Do NOT add technical structure or expand significantly. Output ONLY the cleaned text.`,
+  casual: `You are a prompt engineer. ${SPEECH_CORRECTION_PREAMBLE}
+
+Your job:
+1. Fix speech-to-text errors by inferring what the user actually meant from context
+2. Expand the rough idea into a clear, structured prompt that will get excellent results
+3. Preserve ALL the user's original requirements and details — don't drop anything
+4. If the user mentions names, projects, or specific terms, keep them even if they sound like transcription errors — the user knows what they mean
+5. Add structure (numbered points, specific questions) where it helps clarity
+6. Output ONLY the enhanced prompt — no explanations, no markdown formatting`,
 };
 
 /** Get the system prompt for a specific intent */
