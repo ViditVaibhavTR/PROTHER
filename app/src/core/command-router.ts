@@ -11,8 +11,10 @@ import { showError, showInfo } from '../ui/notifications';
 /**
  * Central dispatcher and state machine.
  * IDLE → LISTENING → PROCESSING → INJECTING → IDLE
- * Toggle: Ctrl+Shift+V while listening stops and injects.
- * Stores last prompt for the Enhance button.
+ *
+ * For Claude Code: deferred injection — shows [Send Raw] / [Enhance] notification
+ * so the input is always empty when we paste (solves the append-instead-of-replace bug).
+ * For Copilot: injects immediately via isPartialQuery (already replaces).
  */
 export class CommandRouter implements vscode.Disposable {
   private state: ProthState = ProthState.IDLE;
@@ -27,11 +29,16 @@ export class CommandRouter implements vscode.Disposable {
   private readonly _onLastPromptChange = new TypedEvent<string>();
   readonly onLastPromptChange = this._onLastPromptChange.event;
 
+  /** Fired when user clicks [Enhance] in the deferred notification */
+  private readonly _onEnhanceRequested = new TypedEvent<string>();
+  readonly onEnhanceRequested = this._onEnhanceRequested.event;
+
   constructor(
     private readonly speechModule: SpeechModule,
     private readonly injectModule: InjectModule,
     private readonly statusBar: StatusBar,
     outputChannel: vscode.OutputChannel,
+    private readonly getTarget: () => string,
   ) {
     this.outputChannel = outputChannel;
 
@@ -66,7 +73,7 @@ export class CommandRouter implements vscode.Disposable {
     );
   }
 
-  /** The last successfully spoken prompt (for enhance button) */
+  /** The last successfully spoken prompt */
   get lastPrompt(): string {
     return this._lastPrompt;
   }
@@ -75,7 +82,7 @@ export class CommandRouter implements vscode.Disposable {
   async activate(trigger: Trigger): Promise<void> {
     this.outputChannel.appendLine(`[INFO] Activate triggered via: ${trigger}`);
 
-    // Toggle: if already listening, stop recording → transcribe → inject
+    // Toggle: if already listening, stop recording → transcribe
     if (this.state === ProthState.LISTENING) {
       this.outputChannel.appendLine('[INFO] Toggle: stopping recording and transcribing');
       this.transitionTo(ProthState.PROCESSING);
@@ -89,7 +96,6 @@ export class CommandRouter implements vscode.Disposable {
       return;
     }
 
-    // Check if speech is available
     if (!this.speechModule.isAvailable()) {
       showError('Voice input is not available in this environment.');
       return;
@@ -127,14 +133,36 @@ export class CommandRouter implements vscode.Disposable {
     this._lastPrompt = text;
     this._onLastPromptChange.fire(text);
 
+    const target = this.getTarget();
+
+    // Claude Code: deferred injection — don't paste yet, let user choose
+    if (target === 'anthropic.claude-code') {
+      this.transitionTo(ProthState.IDLE);
+      const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
+      const choice = await vscode.window.showInformationMessage(
+        `"${preview}"`,
+        'Send Raw',
+        'Enhance',
+      );
+
+      if (choice === 'Send Raw') {
+        await this.processAndInject(text);
+      } else if (choice === 'Enhance') {
+        this._onEnhanceRequested.fire(text);
+      }
+      // If dismissed — text stays in lastPrompt, user can click Enhance button later
+      return;
+    }
+
+    // Copilot / others: inject immediately (isPartialQuery replaces)
     await this.processAndInject(text);
   }
 
-  /** Process transcript and inject into target. clearFirst=true opens new conversation (for enhance). */
-  async processAndInject(text: string, clearFirst = false): Promise<void> {
+  /** Process transcript and inject into target */
+  async processAndInject(text: string): Promise<void> {
     try {
       this.transitionTo(ProthState.INJECTING);
-      const result = await this.injectModule.inject(text, undefined, clearFirst);
+      const result = await this.injectModule.inject(text);
 
       if (result.success) {
         this.outputChannel.appendLine(
@@ -166,7 +194,6 @@ export class CommandRouter implements vscode.Disposable {
   }
 
   private recoverToIdle(): void {
-    // Clear previous recovery timer to prevent stacking
     if (this.recoveryTimer) {
       clearTimeout(this.recoveryTimer);
     }
@@ -191,5 +218,6 @@ export class CommandRouter implements vscode.Disposable {
     }
     this._onStateChange.dispose();
     this._onLastPromptChange.dispose();
+    this._onEnhanceRequested.dispose();
   }
 }

@@ -76,8 +76,18 @@ export function activate(context: vscode.ExtensionContext): void {
     });
   }
 
-  const commandRouter = new CommandRouter(speechModule, injectModule, statusBar, outputChannel);
+  const commandRouter = new CommandRouter(
+    speechModule, injectModule, statusBar, outputChannel,
+    () => targetSelector.getSelectedTarget(),
+  );
   context.subscriptions.push(commandRouter);
+
+  // When user clicks [Enhance] in the deferred notification (Claude Code)
+  context.subscriptions.push(
+    commandRouter.onEnhanceRequested(async (prompt) => {
+      await runEnhancement(prompt);
+    }),
+  );
 
   // Update enhance button when a new prompt is spoken
   context.subscriptions.push(
@@ -178,7 +188,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const enhanced = await enhanceModule.enhance(prompt);
       outputChannel.appendLine(`[INFO] Enhanced: "${enhanced}"`);
 
-      await commandRouter.processAndInject(enhanced, true);
+      await commandRouter.processAndInject(enhanced);
 
       enhanceButton.setDone();
       void usageTracker.recordPrompt(enhanced.split(/\s+/).length, true);

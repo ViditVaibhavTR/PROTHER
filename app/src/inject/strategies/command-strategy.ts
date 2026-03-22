@@ -5,9 +5,11 @@ import type { InjectionStrategy } from '../../core/types';
 /**
  * Injects text into AI extension input boxes WITHOUT submitting.
  *
- * - Copilot Chat: uses isPartialQuery (always replaces input content)
- * - Claude Code: paste into focused input
- *   When clearFirst=true (enhance): opens new conversation first for clean input
+ * - Copilot Chat: uses isPartialQuery (replaces input content)
+ * - Claude Code / Cline / Continue: focus → paste from clipboard
+ *
+ * For Claude Code, the input is guaranteed empty by the deferred injection
+ * design in CommandRouter (shows [Send Raw] / [Enhance] notification first).
  */
 export class CommandStrategy implements InjectionStrategy {
   readonly name = 'command';
@@ -16,7 +18,7 @@ export class CommandStrategy implements InjectionStrategy {
     return target in EXTENSION_COMMANDS;
   }
 
-  async inject(text: string, target: string, clearFirst = false): Promise<boolean> {
+  async inject(text: string, target: string): Promise<boolean> {
     const config = EXTENSION_COMMANDS[target];
     if (!config) return false;
 
@@ -33,37 +35,7 @@ export class CommandStrategy implements InjectionStrategy {
       }
     }
 
-    // For Claude Code — enhance mode: new conversation → paste into clean input
-    if (clearFirst && target === 'anthropic.claude-code') {
-      try {
-        const previousClipboard = await vscode.env.clipboard.readText();
-        await vscode.env.clipboard.writeText(text);
-
-        // Fresh conversation = guaranteed empty input
-        await vscode.commands.executeCommand('claude-vscode.newConversation');
-        await new Promise((r) => setTimeout(r, 1000));
-
-        // Double focus to ensure new conversation's input is active
-        await vscode.commands.executeCommand('claude-vscode.focus');
-        await new Promise((r) => setTimeout(r, 200));
-        await vscode.commands.executeCommand('claude-vscode.focus');
-        await new Promise((r) => setTimeout(r, 200));
-
-        // Paste into the now-empty input
-        await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
-
-        // Restore clipboard
-        setTimeout(async () => {
-          try { await vscode.env.clipboard.writeText(previousClipboard); } catch { /* ignore */ }
-        }, 1000);
-
-        return true;
-      } catch {
-        return false;
-      }
-    }
-
-    // Normal injection: focus → paste
+    // Claude Code / Cline / Continue: focus → paste
     try {
       const previousClipboard = await vscode.env.clipboard.readText();
       await vscode.env.clipboard.writeText(text);
