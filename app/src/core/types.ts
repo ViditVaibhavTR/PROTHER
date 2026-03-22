@@ -48,7 +48,7 @@ export interface InjectResult {
 export interface InjectionStrategy {
   readonly name: string;
   canHandle(target: string): Promise<boolean>;
-  inject(text: string, target: string): Promise<boolean>;
+  inject(text: string, target: string, clearFirst?: boolean): Promise<boolean>;
 }
 
 /** Speech module status */
