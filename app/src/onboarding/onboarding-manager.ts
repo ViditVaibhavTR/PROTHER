@@ -1,10 +1,44 @@
 import * as vscode from 'vscode';
-import type { KeyManager } from '../keys/key-manager';
-import { validateGeminiKey } from '../keys/key-validator';
+import type { KeyManager, LLMProvider } from '../keys/key-manager';
+import { validateKey } from '../keys/key-validator';
+
+interface ProviderOption {
+  id: LLMProvider;
+  label: string;
+  description: string;
+  keyUrl: string;
+}
+
+const PROVIDERS: ProviderOption[] = [
+  {
+    id: 'gemini',
+    label: '$(star) Gemini 2.5 Flash (Free - Recommended)',
+    description: 'No credit card, ~250 requests/day',
+    keyUrl: 'https://aistudio.google.com/app/apikey',
+  },
+  {
+    id: 'groq',
+    label: 'Groq Llama 3.1',
+    description: 'Free tier available, very fast',
+    keyUrl: 'https://console.groq.com/keys',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI GPT-4o Mini',
+    description: 'Paid, high quality',
+    keyUrl: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic Claude Haiku',
+    description: 'Paid, fast',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+  },
+];
 
 /**
- * Handles first-time user onboarding for Gemini API key setup.
- * Shows a guided flow: open Google AI Studio → paste key → validate → done.
+ * Handles API key setup for all LLM providers.
+ * Shows a provider picker, guided key setup, and validation.
  */
 export class OnboardingManager {
   constructor(
@@ -12,17 +46,18 @@ export class OnboardingManager {
     private readonly globalState: vscode.Memento,
   ) {}
 
-  /** Check if onboarding is needed and show it */
+  /** Check if onboarding is needed (first-time, no key at all) */
   async checkAndStart(): Promise<void> {
-    // Don't show if already dismissed
     if (this.globalState.get<boolean>('prother.onboarding.dismissed')) return;
 
-    // Don't show if key already exists
-    const existingKey = await this.keyManager.getKey('gemini');
-    if (existingKey) return;
+    // Check if ANY provider key exists
+    for (const p of PROVIDERS) {
+      const key = await this.keyManager.getKey(p.id);
+      if (key) return; // has at least one key, skip onboarding
+    }
 
     const choice = await vscode.window.showInformationMessage(
-      'Prother: Get a FREE Gemini API key to enable prompt enhancement (~1,500/day, no credit card).',
+      'Prother: Set up a FREE Gemini API key to enable prompt enhancement (~250 req/day, no credit card).',
       'Set Up Now',
       'Later',
     );
@@ -34,22 +69,37 @@ export class OnboardingManager {
     }
   }
 
-  /** Run the guided API key setup */
+  /** Show provider picker and run guided setup */
   async runSetup(): Promise<boolean> {
-    // Step 1: Open Google AI Studio
-    const openStudio = await vscode.window.showInformationMessage(
-      'Step 1: Open Google AI Studio to create a free API key.',
-      'Open AI Studio',
+    // Step 1: Pick provider
+    const picked = await vscode.window.showQuickPick(
+      PROVIDERS.map((p) => ({
+        label: p.label,
+        description: p.description,
+        id: p.id,
+        keyUrl: p.keyUrl,
+      })),
+      { placeHolder: 'Which LLM provider do you want to use for enhancement?' },
     );
 
-    if (openStudio === 'Open AI Studio') {
-      await vscode.env.openExternal(vscode.Uri.parse('https://aistudio.google.com/app/apikey'));
+    if (!picked) return false;
+
+    const provider = picked as { id: LLMProvider; keyUrl: string; label: string };
+
+    // Step 2: Open API key page
+    const openPage = await vscode.window.showInformationMessage(
+      `Open ${provider.label.replace(/\$\(star\) /, '')} to create an API key.`,
+      'Open Key Page',
+    );
+
+    if (openPage === 'Open Key Page') {
+      await vscode.env.openExternal(vscode.Uri.parse(provider.keyUrl));
     }
 
-    // Step 2: Prompt for key
+    // Step 3: Prompt for key
     const key = await vscode.window.showInputBox({
-      title: 'Step 2: Paste your Gemini API key',
-      prompt: 'Your key is stored securely in the OS keychain and never leaves your machine.',
+      title: `Paste your ${provider.label.replace(/\$\(star\) /, '')} API key`,
+      prompt: 'Stored securely in OS keychain. Never leaves your machine.',
       password: true,
       ignoreFocusOut: true,
       validateInput: (v) => (v.trim().length < 10 ? 'That looks too short for an API key' : undefined),
@@ -57,10 +107,10 @@ export class OnboardingManager {
 
     if (!key) return false;
 
-    // Step 3: Validate
+    // Step 4: Validate
     const result = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Testing Gemini connection...' },
-      () => validateGeminiKey(key.trim()),
+      { location: vscode.ProgressLocation.Notification, title: 'Testing connection...' },
+      () => validateKey(provider.id, key.trim()),
     );
 
     if (!result.valid) {
@@ -68,9 +118,13 @@ export class OnboardingManager {
       return false;
     }
 
-    // Save key
-    await this.keyManager.setKey('gemini', key.trim());
-    vscode.window.showInformationMessage('Prother: Gemini key saved! Enhancement is now enabled.');
+    // Step 5: Save key and set as default provider
+    await this.keyManager.setKey(provider.id, key.trim());
+    await vscode.workspace.getConfiguration('prother').update('llm.defaultProvider', provider.id, true);
+
+    vscode.window.showInformationMessage(
+      `Prother: ${provider.label.replace(/\$\(star\) /, '')} key saved! Enhancement is now enabled.`,
+    );
     await this.globalState.update('prother.onboarding.dismissed', true);
     return true;
   }

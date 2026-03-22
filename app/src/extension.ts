@@ -10,6 +10,7 @@ import { KeyManager } from './keys/key-manager';
 import { LLMRouter } from './llm/llm-router';
 import { EnhanceModule } from './enhance/enhance-module';
 import { OnboardingManager } from './onboarding/onboarding-manager';
+import { ProviderSelector } from './ui/provider-selector';
 import { UsageTracker } from './telemetry/usage-tracker';
 import { showRemoteWarning } from './ui/notifications';
 import { ISSUES_URL } from './core/constants';
@@ -54,8 +55,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const enhanceModule = new EnhanceModule(llmRouter);
   const usageTracker = new UsageTracker(context.globalState);
   const onboardingManager = new OnboardingManager(keyManager, context.globalState);
+  const providerSelector = new ProviderSelector(keyManager, onboardingManager);
 
-  context.subscriptions.push(statusBar, targetSelector, enhanceButton, keyManager, speechModule, injectModule);
+  context.subscriptions.push(statusBar, targetSelector, enhanceButton, providerSelector, keyManager, speechModule, injectModule);
 
   // Pre-warm audio recorder
   if (!speechModule.isAvailable()) {
@@ -103,6 +105,12 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('prother.activate', async () => {
       await commandRouter.activate('hotkey');
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('prother.switchProvider', async () => {
+      await providerSelector.showPicker();
     }),
   );
 

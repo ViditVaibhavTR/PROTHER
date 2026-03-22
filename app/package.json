@@ -62,6 +62,10 @@
       {
         "command": "prother.cycleTarget",
         "title": "Prother: Switch Target (Claude Code / Copilot)"
+      },
+      {
+        "command": "prother.switchProvider",
+        "title": "Prother: Switch LLM Provider"
       }
     ],
     "keybindings": [
