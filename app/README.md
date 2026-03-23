@@ -9,15 +9,16 @@
 - **Multi-Provider** — Use Gemini (free), OpenAI, Anthropic, or Groq for enhancement. Switch providers with one click in the status bar.
 - **Multi-Target** — Toggle between Claude Code and Copilot Chat right from the status bar.
 - **Zero UI** — No panels, no browser windows. Everything happens via the status bar.
-- **Private** — All voice processing runs locally (Whisper (faster-whisper)). API keys stored in OS keychain. No backend, no tracking.
+- **Private** — All voice processing runs locally (Moonshine ONNX). API keys stored in OS keychain. No backend, no tracking.
 
 ## Quick Start
 
 1. **Install** this extension from the Marketplace
 2. **Install Python dependency** (one-time):
    ```
-   pip install faster-whisper
+   pip install useful-moonshine-onnx
    ```
+   The speech model (~400MB) downloads automatically on first use — no manual setup needed.
 3. **Set up enhancement** (optional): Click the provider name in the status bar (e.g. `Gemini`) → pick a provider → paste your API key
 4. **Use it**:
    - `Ctrl+Shift+V` → speak your prompt → `Ctrl+Shift+V` → text injected
@@ -63,7 +64,7 @@ Click `→ Claude Code` / `→ Copilot` in the status bar to toggle.
 
 ## Privacy
 
-- Voice transcription runs **100% locally** using Whisper (faster-whisper) (no audio leaves your machine)
+- Voice transcription runs **100% locally** using Moonshine ONNX (no audio leaves your machine)
 - API keys stored in **OS keychain** via VS Code SecretStorage
 - Enhancement prompts are sent to your chosen LLM provider (Gemini/OpenAI/etc.) — no other data is collected
 - No backend, no analytics, no tracking
