@@ -3,7 +3,7 @@ import { TypedEvent } from '../core/events';
 import { SpeechError } from '../core/errors';
 import { TranscriptBuilder } from './transcript-builder';
 import { AudioRecorder } from './audio-recorder';
-import { transcribeAudio } from './whisper-client';
+import { transcribeAudio } from './transcription-client';
 import type { TranscriptEvent, SpeechStatus } from '../core/types';
 
 export type { SpeechStatus };

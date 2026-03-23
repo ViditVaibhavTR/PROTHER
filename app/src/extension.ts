@@ -14,7 +14,7 @@ import { ProviderSelector } from './ui/provider-selector';
 import { UsageTracker } from './telemetry/usage-tracker';
 import { showRemoteWarning } from './ui/notifications';
 import { ISSUES_URL } from './core/constants';
-import { preloadWhisperModel } from './speech/whisper-client';
+import { preloadModel } from './speech/transcription-client';
 
 let rejectionHandlerRegistered = false;
 
@@ -71,8 +71,8 @@ export function activate(context: vscode.ExtensionContext): void {
     });
 
     // Lazy-download Whisper model in background (so first transcription is fast)
-    preloadWhisperModel().then(() => {
-      outputChannel.appendLine('[INFO] Whisper model ready');
+    preloadModel().then(() => {
+      outputChannel.appendLine('[INFO] Moonshine model ready');
     });
   }
 
