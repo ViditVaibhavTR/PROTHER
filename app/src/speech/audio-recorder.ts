@@ -133,22 +133,29 @@ export class AudioRecorder implements vscode.Disposable {
     }
 
     if (this.proc) {
-      // Send Ctrl+C (SIGINT) to stop SoX gracefully — it finalizes the WAV header
-      this.proc.kill('SIGINT');
-
-      // Wait for process to finish (max 3s)
       const currentProc = this.proc;
+
+      // On Windows, SIGINT doesn't work properly with child_process.
+      // Write to stdin to trigger SoX's graceful shutdown, then kill.
+      try {
+        currentProc.stdin?.end();
+      } catch { /* ignore */ }
+
+      // Give SoX a moment to finalize the WAV header, then force kill
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
-          currentProc?.kill();
+          try { currentProc.kill(); } catch { /* ignore */ }
           resolve();
-        }, 3000);
+        }, 1500);
 
         currentProc.on('close', () => {
           clearTimeout(timeout);
           resolve();
         });
       });
+
+      // Small delay to ensure file handle is released
+      await new Promise((r) => setTimeout(r, 200));
     }
 
     this._onStopped.fire();
