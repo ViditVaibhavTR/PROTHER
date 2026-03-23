@@ -70,7 +70,7 @@ export function preloadModel(): Promise<void> {
     execFile(python, [scriptPath, '--preload'], {
       timeout: 120_000, // 2 min for model download
       windowsHide: true,
-      env: { ...process.env },
+      env: { ...process.env, HF_HUB_DISABLE_SYMLINKS_WARNING: '1' },
     }, () => {
       // Resolve regardless — preload is best-effort
       resolve();
@@ -116,8 +116,17 @@ function runTranscription(wavPath: string): Promise<string> {
     execFile(python, [scriptPath, wavPath], {
       timeout: 30000,
       windowsHide: true,
-      env: { ...process.env },
+      env: { ...process.env, HF_HUB_DISABLE_SYMLINKS_WARNING: '1' },
     }, (error, stdout, stderr) => {
+      // If stdout has text, transcription succeeded — ignore stderr warnings
+      // (HuggingFace prints warnings to stderr even on success)
+      const text = stdout?.trim();
+      if (text) {
+        resolve(text);
+        return;
+      }
+
+      // No text output — check for real errors
       if (error) {
         const msg = stderr?.trim() || error.message;
         if (msg.includes('moonshine not installed')) {
@@ -139,7 +148,11 @@ function runTranscription(wavPath: string): Promise<string> {
         return;
       }
 
-      resolve(stdout.trim());
+      // No error but empty output
+      reject(new SpeechError(
+        'Transcription returned empty',
+        'No speech detected. Try speaking louder or closer to the mic.',
+      ));
     });
   });
 }
